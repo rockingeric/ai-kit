@@ -4,7 +4,7 @@ Oct 8, 2026 · @Eric
 
 > Snapshot exportado do doc em https://claude.ai/code/artifact/d51060d6-ddf2-4197-97d8-bb0ef0b307ba (rev 44). O doc é a fonte principal.
 > **Pendente de sync**: revisão de 8 Out 2026 aplicada só neste arquivo (o doc não estava acessível); replicar lá.
-> **Status (8 Out 2026)**: fases 1 a 6 implementadas e testadas (44 testes); Genie substituído por planos e /aikit-ship (ADR-0018); uma branch por trabalho imposta (ADR-0019); fase 7 (piloto) pendente.
+> **Status (8 Out 2026)**: fases 1 a 6 implementadas e testadas (49 testes); Genie substituído por wishes e /aikit-ship (ADR-0018, ADR-0020); uma branch por trabalho imposta (ADR-0019); fase 7 (piloto) pendente.
 
 ## Objetivo e escopo
 
@@ -19,7 +19,7 @@ O ai-kit é um repo seu, clonado uma vez na máquina, que instala em qualquer pr
 - Um `index.yaml` que o agente lê primeiro, para abrir só o que precisa
 - CLI `aikit` para instalar, compilar, validar e remover
 - 3 skills e 1 hook do Claude Code
-- Planos em `.ai/plans/` para trabalho que atravessa sessões, e o gate `/aikit-ship` antes do PR (substituem a integração com o Genie; ADR-0018)
+- Wishes em `.ai/wishes/` para trabalho que atravessa sessões, aprovados pelo humano antes de começar, e o gate `/aikit-ship` antes do PR (substituem a integração com o Genie; ADR-0018 e ADR-0020)
 
 **Fora do escopo (v1)**
 
@@ -98,7 +98,7 @@ A mecânica do kit fica fora do git, listada num bloco `# >>> ai-kit` em `.git/i
 | `.claude/agents/aikit-*.md` | não | gerado pelo build | Subagents com cabeçalho "não editar" |
 | `.claude/skills/aikit-*` | não | copiado do kit | Os 3 skills |
 | `.claude/settings.local.json` | não | merge pelo init e pelo build | Hooks PostToolUse (build) e PreToolUse (bloqueio de commit na branch padrão) |
-| `.ai/plans/*.md` | não | `aikit plan new` + agente | Planos de trabalho; só `active` e `draft` entram no índice |
+| `.ai/wishes/*.md` | não | `aikit wish new` + agente | Wishes; só `draft` e `approved` entram no índice |
 
 **Conflito com arquivos do time**: se o projeto já tiver `CLAUDE.md` ou `AGENTS.md` versionados, o `init` não toca neles e avisa. Nesse caso o import do `.ai/AGENTS.md` vai por um caminho privado (ver Riscos).
 
@@ -216,8 +216,8 @@ summary: Volta para a versão anterior e confirma saúde do serviço
 generated: 2026-10-08        # só data; hora completa muda a cada build e gera diff sem valor
 project: .ai/project.yaml
 personas: [architect, reviewer, security, qa, tech-writer]
-plans:  # trabalho em andamento; retome pelo plano active
-  - {path: .ai/plans/migrar-auth-para-jwt.md, status: active, summary: JWT com refresh}
+wishes:  # approved = em andamento (retome por ele); draft = aguarda aprovação humana
+  - {path: .ai/wishes/migrar-auth-para-jwt.md, status: approved, summary: JWT com refresh}
 decisions_dir: docs/decisions  # arquivo: <id>-*.md (path fora das entradas: -34% de tamanho)
 decisions:
   - {id: ADR-0003, status: proposed, tags: [db, orm], summary: Drizzle no lugar de Prisma}
@@ -248,8 +248,9 @@ Divisão de trabalho: o CLI faz o mecânico e determinístico; os skills fazem o
 | `aikit adr reject 0003` | Marca um ADR `proposed` como rejected |
 | `aikit runbook new "título"` | Cria runbook do template em paths.runbooks com last_verified de hoje |
 | `aikit runbook verify <slug>` | Marca o runbook como verificado hoje |
-| `aikit plan new "título"` | Cria plano `active` em `.ai/plans/` (objetivo, escopo, critérios de aceite, passos, próxima sessão), cria a branch `plan/<slug>` e troca para ela |
-| `aikit plan done <slug>` | Conclui o plano (sai do índice) e avisa critérios não marcados |
+| `aikit wish new "título"` | Cria wish `draft` em `.ai/wishes/` (resumo, escopo, decisões, critérios de aceite, passos, próxima sessão) |
+| `aikit wish approve <slug>` | Só humano: exige critérios preenchidos, marca `approved`, cria a branch `wish/<slug>` e troca para ela |
+| `aikit wish done <slug>` | Conclui o wish `approved` (sai do índice) e avisa critérios não marcados |
 | `aikit lint --refs` | Também acusa paths citados em docs que não existem (a parte mecânica do docs-sync) |
 | `aikit hook post-edit` / `pre-bash` | Entradas dos hooks PostToolUse e PreToolUse (leem o JSON do stdin) |
 | `aikit backup` | Copia `.ai/` (project.yaml, overrides, notas privadas) para um repo privado seu, uma pasta por projeto; ADRs e runbooks já viajam no git do projeto |
@@ -260,25 +261,26 @@ Todo comando que muta estado (`adr`, `runbook`, `plan`) roda `build` implicitame
 
 **Skills (copiados para `.claude/skills/`)**
 
-Todos com prefixo `aikit-`, pela mesma razão dos subagents: skill sem prefixo pode colidir com skill do usuário ou do time. `aikit-onboard`, `aikit-ship` e `aikit-docs-sync` são acionados por você (`/nome`) e usam `disable-model-invocation: true`, o que tira a description deles do contexto fixo; só `aikit-adr` e `aikit-plan` ficam disponíveis para o modelo, e as descriptions deles fazem o roteamento.
+Todos com prefixo `aikit-`, pela mesma razão dos subagents: skill sem prefixo pode colidir com skill do usuário ou do time. `aikit-onboard`, `aikit-ship` e `aikit-docs-sync` são acionados por você (`/nome`) e usam `disable-model-invocation: true`, o que tira a description deles do contexto fixo; só `aikit-adr` e `aikit-wish` ficam disponíveis para o modelo, e as descriptions deles fazem o roteamento.
 
 - `aikit-onboard`: lê o repo, preenche `project.yaml` e o `AGENTS.md`, roda `aikit build`. Roda uma vez por projeto.
 - `aikit-adr`: chama `aikit adr new` e escreve Contexto, Opções, Decisão, Consequências. Termina imprimindo o comando pronto (`aikit adr accept NNNN`) para você rodar, já que só você aceita.
-- `aikit-plan`: cria ou retoma um plano para trabalho de várias sessões; antes de encerrar a sessão, atualiza "Próxima sessão".
+- `aikit-wish`: cria o wish em `draft` e para pedindo aprovação; depois de aprovado, retoma por ele e atualiza "Próxima sessão" antes de encerrar.
 - `aikit-ship`: gate antes do PR. Roda teste e lint, chama as personas de gate `ship` em paralelo (security só se o diff for sensível), lista ADRs `proposed` pendentes e devolve PODE ABRIR PR, CORRIGIR ou BLOQUEADO.
 - `aikit-docs-sync`: o tech-writer compara `.ai/docs/`, ADRs e runbooks com o código (comandos e paths citados ainda existem?) e propõe correções, sem aplicar sozinho.
 
-**Regra de decisão (no bloco gerado do `AGENTS.md`)**: cabe numa sessão e não restringe o futuro → só faça; escolha cara de desfazer → ADR; várias sessões → plano; na dúvida, pergunte. Não há gateway que classifica cada pedido: custaria em todo pedido para acertar a minoria. A checagem "decisão estrutural sem ADR" acontece uma vez por PR, no reviewer, sobre o diff real. As regras do kit ficam no bloco gerado para que `aikit build` as atualize em todos os projetos.
+**Regra de decisão (no bloco gerado do `AGENTS.md`)**: cabe numa sessão e não restringe o futuro → só faça; escolha cara de desfazer → ADR; várias sessões → wish; na dúvida, pergunte. Não há gateway que classifica cada pedido: custaria em todo pedido para acertar a minoria. A checagem "decisão estrutural sem ADR" acontece uma vez por PR, no reviewer, sobre o diff real. As regras do kit ficam no bloco gerado para que `aikit build` as atualize em todos os projetos.
 
 **Hook (`.claude/settings.local.json`)**
 
 - `PostToolUse` em `Edit|Write` roda `aikit hook post-edit`, que lê `tool_input.file_path` do stdin e só faz build se o caminho estiver em `.ai/**` ou `docs/**`.
 - `PreToolUse` em `Bash` roda `aikit hook pre-bash`: se há um commit em posição de comando e o repo está na branch padrão, sai com código 2 e o Claude recebe a instrução de criar a branch (ADR-0019).
+- O mesmo hook bloqueia `aikit adr accept` e `aikit wish approve` quando quem roda é o agente (ADR-0020). Você roda no terminal ou com `!` no Claude Code.
 - Se o build achar problema (ex.: override inválido), o hook sai com código 2 e a mensagem volta para o Claude corrigir. O comando é gravado com caminho absoluto do `aikit`, porque o shell do hook pode não ter o mesmo PATH.
 
 ## Sem Genie (ADR-0018)
 
-A integração com o Genie foi removida em 8 Out 2026. Instalado, ele somava 18 skills globais ao contexto de toda sessão, e três se sobrepunham às personas. As duas coisas que ele dava e que faziam falta foram cobertas com peças pequenas: planos (estado entre sessões) e `/aikit-ship` (gate de revisão que não depende de lembrar). O que fica de fora é a execução autônoma e paralela de tarefas longas.
+A integração com o Genie foi removida em 8 Out 2026. Instalado, ele somava 18 skills globais ao contexto de toda sessão, e três se sobrepunham às personas. As duas coisas que ele dava e que faziam falta foram cobertas com peças pequenas: wishes com aprovação humana (escopo e estado entre sessões; ADR-0020) e `/aikit-ship` (gate de revisão que não depende de lembrar). O que fica de fora é a execução autônoma e paralela de tarefas longas.
 
 ## Fases
 
@@ -298,7 +300,7 @@ Sete fases curtas, cada uma fecha com um teste que dá para rodar.
    - `aikit backup` (adiantado da v2): sem ele, um clone novo perde o `.ai/` (project.yaml, overrides, notas)
    - Pronto quando: init + uninstall num repo fixture deixam o `git status` limpo fora de `docs/`; `docs/decisions/` e `docs/runbooks/` criados no init permanecem após o uninstall
 4. **ADRs e índice**
-   - `adr new`, `adr supersede`, `adr accept` (grava `body_sha`), `index_builder.py` lendo frontmatters, personas, `.ai/docs` e `.ai/plans`
+   - `adr new`, `adr supersede`, `adr accept` (grava `body_sha`), `index_builder.py` lendo frontmatters, personas, `.ai/docs` e `.ai/wishes`
    - `runbook new`, tipo Diátaxis inferido da pasta (frontmatter só para exceção e `.ai/docs/`), índice agrupado por tipo, aviso de `last_verified` vencido
    - Pronto quando: superseder um ADR atualiza os dois arquivos e o índice; `lint` acusa ADR `accepted` sem `body_sha` ou com corpo que não bate com ele
 5. **Conteúdo das 5 personas e templates**
@@ -311,7 +313,7 @@ Sete fases curtas, cada uma fecha com um teste que dá para rodar.
 7. **Piloto em 2 repos reais e overlay**
    - Um repo Python, um Next.js
    - Overlay `_example` documentado
-   - Pronto quando: 3 tarefas reais entregues com `/aikit-ship` antes do PR, pelo menos 1 plano retomado em sessão nova e 1 ADR aceito via PR
+   - Pronto quando: 3 tarefas reais entregues com `/aikit-ship` antes do PR, pelo menos 1 wish aprovado e retomado em sessão nova e 1 ADR aceito via PR
 
 ## Riscos e pontos a verificar
 

@@ -19,11 +19,13 @@ WORKFLOW_RULES = """\
 - Antes de começar uma tarefa, decida o artefato:
   - cabe numa sessão e não restringe o futuro → só faça;
   - escolha cara de desfazer, ou que um agente contrariaria sem saber → ADR (skill `aikit-adr`);
-  - trabalho de várias sessões → plano (skill `aikit-plan`); decisões estruturais dentro dele → ADR;
+  - trabalho de várias sessões → wish (skill `aikit-wish`); decisões estruturais dentro dele → ADR;
   - na dúvida, pergunte ao humano em uma linha em vez de criar artefato.
-- Todo trabalho com commit acontece fora da branch padrão: `git switch -c <tipo>/<slug>` antes do primeiro commit (plano: `plan/<slug>`, criada pelo `aikit plan new`). Commit na branch padrão é bloqueado.
-- Plano `active` no índice é trabalho em andamento: retome por ele e atualize "Próxima sessão" antes de parar.
-- ADR `accepted` é regra; para mudar, ADR novo com `--supersedes`. Só o humano aceita.
+- Wish nasce `draft`; não implemente antes de o humano aprovar (`aikit wish approve`, que cria a branch `wish/<slug>`).
+- Wish `approved` no índice é trabalho em andamento: retome por ele e atualize "Próxima sessão" antes de parar.
+- Todo trabalho com commit acontece fora da branch padrão: `git switch -c <tipo>/<slug>` antes do primeiro commit. Commit na branch padrão é bloqueado.
+- ADR `accepted` é regra; para mudar, ADR novo com `--supersedes`.
+- Só o humano aceita ADR e aprova wish: o agente não roda `aikit adr accept` nem `aikit wish approve` (bloqueado).
 - Procedimento operacional → `aikit runbook new "título"`.
 - `.claude/agents/aikit-*.md` é gerado: mude `.ai/personas/<id>.yaml` e rode `aikit build`."""
 
@@ -41,7 +43,7 @@ READS_LABELS = {
     "project": "`project` (stack, comandos, convenções)",
     "decisions": "`decisions` (ADRs em `decisions_dir`; `accepted` é regra)",
     "personas": "`personas`",
-    "plans": "`plans` (critérios de aceite do plano ativo)",
+    "wishes": "`wishes` (critérios de aceite do wish approved)",
     "tutorial": "`docs.tutorial`",
     "how-to": "`docs.how-to` (runbooks)",
     "reference": "`docs.reference`",
@@ -105,7 +107,7 @@ def render_agents_block(personas: list[Persona]) -> str:
         WORKFLOW_RULES,
         "",
         "## Personas",
-        "O dev é a thread principal; delegue pelo nome. Gates: `plan` e `adr` = consultar ao planejar "
+        "O dev é a thread principal; delegue pelo nome. Gates: `wish` e `adr` = consultar ao planejar "
         "e decidir; `ship` = chamada pelo `/aikit-ship` antes do PR.",
     ]
     for p in personas:

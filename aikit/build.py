@@ -67,6 +67,10 @@ def plan(project: Project) -> BuildPlan:
             if src.is_file():
                 rel = src.relative_to(skills_src)
                 result.writes[skills_dir(project) / rel] = src.read_text(encoding="utf-8")
+        for rel in project.manifest().get("files", []):  # skills dropped from the kit
+            path = project.root / rel
+            if skills_dir(project) in path.parents and path not in result.writes and path.is_file():
+                result.stale.append(path)
 
     agents_md = project.ai / "AGENTS.md"
     if agents_md.is_file():
@@ -86,6 +90,8 @@ def apply(project: Project, build_plan: BuildPlan) -> list[str]:
     for path in build_plan.stale:
         path.unlink()
         changed.append(f"{project.rel(path)} (removido)")
+        if path.parent != agents_dir(project) and not any(path.parent.iterdir()):
+            path.parent.rmdir()  # a skill's own folder
 
     manifest_path = project.ai / "manifest.json"
     if manifest_path.is_file():

@@ -1,4 +1,4 @@
-"""ADR, runbook and plan lifecycle: new, supersede, accept, reject, verify, done."""
+"""ADR, runbook and wish lifecycle: new, supersede, accept, reject, verify, approve, done."""
 
 from __future__ import annotations
 
@@ -165,37 +165,62 @@ def verify_runbook(project: Project, ref: str) -> Path:
     return path
 
 
-def _plan_path(project: Project, ref: str) -> Path:
-    slug = ref.removeprefix("PL-").removesuffix(".md")
-    path = project.ai / "plans" / f"{slug}.md"
+def _wish_path(project: Project, ref: str) -> Path:
+    slug = ref.removeprefix("WISH-").removeprefix("wish/").removesuffix(".md")
+    path = project.ai / "wishes" / f"{slug}.md"
     if not path.is_file():
-        raise AikitError(f"plano {slug} não encontrado em .ai/plans")
+        raise AikitError(f"wish {slug} não encontrado em .ai/wishes")
     return path
 
 
-def new_plan(project: Project, title: str, summary: str | None = None) -> tuple[Path, str | None]:
-    """Create the plan and put the repo on its branch `plan/<slug>`. Returns (path, branch note)."""
+def _criteria(body: str) -> tuple[list[str], list[str]]:
+    """(open, done) acceptance criteria with text; empty template lines don't count."""
+    section = re.search(r"^## Critérios de aceite\n(.*?)(?=^## |\Z)", body, re.S | re.M)
+    text = section.group(1) if section else ""
+    return (
+        re.findall(r"^- \[ \] *(\S.*)$", text, re.M),
+        re.findall(r"^- \[[xX]\] *(\S.*)$", text, re.M),
+    )
+
+
+def new_wish(project: Project, title: str, summary: str | None = None) -> Path:
+    """Create a draft wish. No branch yet: work starts only after the human approves it."""
     slug = slugify(title)
-    path = project.ai / "plans" / f"{slug}.md"
+    path = project.ai / "wishes" / f"{slug}.md"
     if path.exists():
         raise AikitError(f"{project.rel(path)} já existe")
-    note = project.ensure_branch(f"plan/{slug}")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         _render(
-            "plan.md",
-            {"id": f"PL-{slug}", "title": title, "date": today().isoformat(), "summary": _short(summary or title)},
+            "wish.md",
+            {"id": f"WISH-{slug}", "title": title, "date": today().isoformat(), "summary": _short(summary or title)},
         ),
         encoding="utf-8",
     )
+    return path
+
+
+def approve_wish(project: Project, ref: str) -> tuple[Path, str | None]:
+    """Human-only: draft -> approved, then put the repo on `wish/<slug>`. Returns (path, branch note)."""
+    path = _wish_path(project, ref)
+    doc = parse_doc(path)
+    status = (doc.meta or {}).get("status")
+    if status != "draft":
+        raise AikitError(f"{path.stem} está {status}; só draft pode ser aprovado")
+    open_items, done_items = _criteria(doc.body)
+    if not open_items and not done_items:
+        raise AikitError(f"{path.stem} não tem critérios de aceite preenchidos; não há o que aprovar")
+    note = project.ensure_branch(f"wish/{path.stem}")
+    set_fields(path, {"status": "approved", "approved": today().isoformat()})
     return path, note
 
 
-def finish_plan(project: Project, ref: str) -> tuple[Path, list[str]]:
-    """Mark a plan done; return it with the acceptance criteria still unchecked."""
-    path = _plan_path(project, ref)
-    body = parse_doc(path).body
-    section = re.search(r"^## Critérios de aceite\n(.*?)(?=^## |\Z)", body, re.S | re.M)
-    open_items = re.findall(r"^- \[ \] *(\S.*)$", section.group(1), re.M) if section else []
+def finish_wish(project: Project, ref: str) -> tuple[Path, list[str]]:
+    """approved -> done; returns the acceptance criteria still unchecked."""
+    path = _wish_path(project, ref)
+    doc = parse_doc(path)
+    status = (doc.meta or {}).get("status")
+    if status != "approved":
+        raise AikitError(f"{path.stem} está {status}; só wish approved pode ser concluído")
     set_fields(path, {"status": "done"})
-    return path, open_items
+    return path, _criteria(doc.body)[0]

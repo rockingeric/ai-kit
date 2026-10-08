@@ -92,19 +92,22 @@ def cmd_runbook(args) -> int:
     return _rebuild(project)
 
 
-def cmd_plan(args) -> int:
+def cmd_wish(args) -> int:
     from aikit import records
 
     project = load_project()
     if args.action == "new":
-        path, branch_note = records.new_plan(project, args.title, args.summary)
+        path = records.new_wish(project, args.title, args.summary)
         print(project.rel(path))
+        print(f"Preencha Resumo, Escopo, Critérios de aceite e Passos. Para aprovar: aikit wish approve {path.stem}")
+    elif args.action == "approve":
+        path, branch_note = records.approve_wish(project, args.ref)
+        print(f"{path.stem} approved")
         if branch_note:
             print(branch_note)
-        print("Preencha Objetivo, Escopo, Critérios de aceite e Passos.")
     else:
-        path, open_items = records.finish_plan(project, args.ref)
-        print(f"{project.rel(path)}: done (saiu do índice)")
+        path, open_items = records.finish_wish(project, args.ref)
+        print(f"{path.stem}: done (saiu do índice)")
         for item in open_items:
             print(f"aviso: critério não marcado: {item}", file=sys.stderr)
     return _rebuild(project)
@@ -143,7 +146,9 @@ def cmd_uninstall(args) -> int:
 def cmd_hook(args) -> int:
     from aikit import hook
 
-    handler = hook.pre_bash if args.event == "pre-bash" else hook.post_edit
+    handler = {"pre-bash": hook.pre_bash, "post-edit": hook.post_edit}.get(args.event)
+    if handler is None:  # settings newer than this checkout: never block the agent over it
+        return 0
     return handler(sys.stdin.read())
 
 
@@ -191,16 +196,16 @@ def parser() -> argparse.ArgumentParser:
     for name in ("new", "verify"):
         rb.choices[name].set_defaults(func=cmd_runbook)
 
-    pl = sub.add_parser("plan", help="planos de trabalho que atravessam sessões").add_subparsers(
-        dest="action", required=True
-    )
-    s = pl.add_parser("new", help="novo plano (active) em .ai/plans")
+    wi = sub.add_parser("wish", help="trabalho que atravessa sessões").add_subparsers(dest="action", required=True)
+    s = wi.add_parser("new", help="novo wish (draft) em .ai/wishes")
     s.add_argument("title")
     s.add_argument("--summary", help="até 80 caracteres")
-    s = pl.add_parser("done", help="conclui o plano e o tira do índice")
+    s = wi.add_parser("approve", help="aprova o wish e cria a branch wish/<slug> (só humano)")
     s.add_argument("ref")
-    for name in ("new", "done"):
-        pl.choices[name].set_defaults(func=cmd_plan)
+    s = wi.add_parser("done", help="conclui o wish e o tira do índice")
+    s.add_argument("ref")
+    for name in ("new", "approve", "done"):
+        wi.choices[name].set_defaults(func=cmd_wish)
 
     s = sub.add_parser("backup", help="copia .ai/ para seu repo privado de backup")
     s.add_argument("--to", help="diretório de backup (fica salvo para as próximas vezes)")
@@ -214,7 +219,7 @@ def parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_uninstall)
 
     s = sub.add_parser("hook", help="entrada dos hooks do Claude Code")
-    s.add_argument("event", choices=["post-edit", "pre-bash"])
+    s.add_argument("event", help="post-edit | pre-bash (eventos desconhecidos saem com 0)")
     s.set_defaults(func=cmd_hook)
     return p
 

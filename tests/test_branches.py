@@ -10,22 +10,36 @@ def _bash(project, command):
     return pre_bash(json.dumps({"cwd": str(project.root), "tool_input": {"command": command}}))
 
 
-def test_plan_new_creates_and_switches_to_its_branch(project):
-    path, note = records.new_plan(project, "Migrar auth para JWT")
-    assert current_branch(project.root) == "plan/migrar-auth-para-jwt"
+def _approvable(project, title):
+    path = records.new_wish(project, title)
+    path.write_text(path.read_text().replace("## Critérios de aceite\n- [ ] ", "## Critérios de aceite\n- [ ] Funciona"))
+    return path
+
+
+def test_branch_is_created_on_approval_not_on_creation(project):
+    _approvable(project, "Migrar auth para JWT")
+    assert current_branch(project.root) == "main"
+    _, note = records.approve_wish(project, "migrar-auth-para-jwt")
+    assert current_branch(project.root) == "wish/migrar-auth-para-jwt"
     assert "criada" in note
-    git(project.root, "switch", "-q", "main")
-    path.unlink()
-    _, note = records.new_plan(project, "Migrar auth para JWT")
-    assert current_branch(project.root) == "plan/migrar-auth-para-jwt"
-    assert "já existia" in note
 
 
-def test_plan_new_respects_enforce_false(project):
+def test_approval_respects_enforce_false(project):
     cfg = project.ai / "project.yaml"
     cfg.write_text(cfg.read_text() + "git:\n  enforce_branches: false\n")
-    _, note = records.new_plan(load_project(project.root), "Sem branch")
+    project = load_project(project.root)
+    _approvable(project, "Sem branch")
+    _, note = records.approve_wish(project, "sem-branch")
     assert note is None and current_branch(project.root) == "main"
+
+
+def test_agent_cannot_accept_adr_or_approve_wish(project, capsys):
+    git(project.root, "switch", "-q", "-c", "feat/x")  # off main: only the human-only rule applies
+    assert _bash(project, "aikit adr accept 0003") == 2
+    assert "decisão do humano" in capsys.readouterr().err
+    assert _bash(project, "cd x && .venv/bin/aikit wish approve jwt") == 2
+    assert _bash(project, "aikit adr new 'x' && aikit lint") == 0
+    assert _bash(project, "echo 'rode aikit wish approve jwt'") == 0  # a mention is fine
 
 
 def test_commit_on_default_branch_is_blocked(project, capsys):

@@ -2,11 +2,11 @@ id: qa
 model: sonnet
 tools: [Read, Grep, Glob, Bash, Write, Edit]
 description: >
-  Use para validar uma entrega contra os critérios de aceite do plano ou da tarefa:
+  Use para validar uma entrega contra os critérios de aceite do wish ou da tarefa:
   roda os testes, escreve os que faltam e reporta o que não passa.
 role: Verifica se a entrega cumpre os critérios de aceite, com evidência executável
 gates: [ship]
-reads: [project, plans, how-to]
+reads: [project, wishes, how-to]
 principles:
   - Rode o comando de teste do project.yaml antes de qualquer outra coisa
   - Cada critério de aceite vira um teste ou uma verificação reproduzível

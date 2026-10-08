@@ -16,6 +16,10 @@ GENERATED = {"index.yaml", "manifest.json"}
 _COMMIT_RE = re.compile(
     r"(?:^|[;&|(\n]|\$\()\s*(?:\w+=\S*\s+)*git(?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*\s+commit(?![\w-])"
 )
+# Human-only approvals, also when aikit is called by path (`.venv/bin/aikit`).
+_HUMAN_ONLY_RE = re.compile(
+    r"(?:^|[;&|(\n]|\$\()\s*(?:\w+=\S*\s+)*(?:\S*/)?aikit\s+(adr\s+accept|wish\s+approve)\b"
+)
 
 
 def _payload(stdin: str) -> dict:
@@ -66,6 +70,15 @@ def pre_bash(stdin: str) -> int:
     """Exit 2 blocks the Bash call and shows stderr to Claude."""
     payload = _payload(stdin)
     command = (payload.get("tool_input") or {}).get("command") or ""
+    human_only = _HUMAN_ONLY_RE.search(command)
+    if human_only:
+        action = " ".join(human_only.group(1).split())
+        print(
+            f"aikit: `aikit {action}` é decisão do humano e não pode ser rodado pelo agente. "
+            "Termine pedindo ao humano que rode o comando (no terminal, ou com `!` no Claude Code).",
+            file=sys.stderr,
+        )
+        return 2
     if not _COMMIT_RE.search(command):
         return 0
     try:
@@ -80,7 +93,7 @@ def pre_bash(stdin: str) -> int:
     print(
         f"aikit: commit na branch padrão ({default}) é bloqueado neste projeto. "
         "Crie a branch do trabalho antes e repita o commit: `git switch -c <tipo>/<slug>` "
-        "(plano: `plan/<slug>`, criada pelo `aikit plan new`). "
+        "(wish: `wish/<slug>`, criada pelo `aikit wish approve`). "
         "Desligar: `git: {enforce_branches: false}` em .ai/project.yaml.",
         file=sys.stderr,
     )

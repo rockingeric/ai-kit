@@ -61,8 +61,8 @@ def test_overlay_then_project_override(project):
 
 def test_agents_block_carries_kit_rules_and_gates(project):
     text = (project.ai / "AGENTS.md").read_text()
-    assert "skill `aikit-plan`" in text and "na dúvida, pergunte" in text
-    assert "- `aikit-architect`: plan, adr" in text
+    assert "skill `aikit-wish`" in text and "na dúvida, pergunte" in text
+    assert "- `aikit-architect`: wish, adr" in text
     assert "- `aikit-tech-writer`: sob demanda" in text
     assert text.count("## Como trabalhar aqui") == 1
     assert text.count("\n") <= 60
@@ -96,3 +96,16 @@ def test_invalid_override_is_reported_once_and_skipped(project):
     assert len(problems) == 1 and problems[0].startswith(".ai/personas/qa.yaml")
     meta = parse_doc(project.root / ".claude/agents/aikit-architect.md").meta
     assert meta["name"] == "aikit-architect"
+
+
+def test_build_removes_skills_dropped_from_the_kit(project):
+    old = project.root / ".claude/skills/aikit-velho/SKILL.md"
+    old.parent.mkdir()
+    old.write_text("---\nname: aikit-velho\n---\n")
+    manifest = project.manifest()
+    manifest["files"].append(".claude/skills/aikit-velho/SKILL.md")
+    project.save_manifest(manifest)
+    build.run(project)
+    assert not old.parent.exists()
+    assert ".claude/skills/aikit-velho/SKILL.md" not in project.manifest()["files"]
+    assert (project.root / ".claude/skills/aikit-wish/SKILL.md").is_file()

@@ -31,12 +31,12 @@
         "items": {"type": "object", "required": ["path"]}
       }
     },
-    "plans": {
+    "wishes": {
       "type": "array",
       "items": {
         "type": "object",
         "required": ["path", "status"],
-        "properties": {"status": {"enum": ["draft", "active"]}}
+        "properties": {"status": {"enum": ["draft", "approved"]}}
       }
     }
   }

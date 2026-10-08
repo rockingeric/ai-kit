@@ -21,6 +21,7 @@ WORKFLOW_RULES = """\
   - escolha cara de desfazer, ou que um agente contrariaria sem saber → ADR (skill `aikit-adr`);
   - trabalho de várias sessões → plano (skill `aikit-plan`); decisões estruturais dentro dele → ADR;
   - na dúvida, pergunte ao humano em uma linha em vez de criar artefato.
+- Todo trabalho com commit acontece fora da branch padrão: `git switch -c <tipo>/<slug>` antes do primeiro commit (plano: `plan/<slug>`, criada pelo `aikit plan new`). Commit na branch padrão é bloqueado.
 - Plano `active` no índice é trabalho em andamento: retome por ele e atualize "Próxima sessão" antes de parar.
 - ADR `accepted` é regra; para mudar, ADR novo com `--supersedes`. Só o humano aceita.
 - Procedimento operacional → `aikit runbook new "título"`.

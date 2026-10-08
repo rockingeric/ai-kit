@@ -41,7 +41,7 @@ def test_generated_date_only_changes_with_content(project, monkeypatch):
 
 def test_open_plans_are_indexed_and_done_plans_leave(project):
     records.new_plan(project, "Migrar auth para JWT", "JWT com refresh")
-    draft = records.new_plan(project, "Cache de catálogo")
+    draft, _ = records.new_plan(project, "Cache de catálogo")
     draft.write_text(draft.read_text().replace("status: active", "status: draft"))
     build.run(project)
     assert load_yaml(project.ai / "index.yaml")["plans"] == [
@@ -62,7 +62,7 @@ def test_open_plans_are_indexed_and_done_plans_leave(project):
 
 
 def test_lint_checks_plan_frontmatter_and_adr_links(project):
-    path = records.new_plan(project, "Plano")
+    path, _ = records.new_plan(project, "Plano")
     path.write_text(path.read_text().replace("adrs: []", "adrs: [ADR-0009]").replace("status: active", "status: doing"))
     errors = lint.run(project).errors
     assert any("status" in e for e in errors)

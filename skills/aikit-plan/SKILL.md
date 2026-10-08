@@ -9,7 +9,7 @@ O plano guarda o estado de um trabalho longo, para que a próxima sessão retome
 
 ## Criar
 
-1. `aikit plan new "Título no imperativo" --summary "até 80 caracteres"`. O comando imprime o caminho.
+1. `aikit plan new "Título no imperativo" --summary "até 80 caracteres"`. O comando imprime o caminho e cria a branch `plan/<slug>`, já fazendo a troca para ela; todo o trabalho do plano é commitado nela.
 2. Preencha, curto:
    - **Objetivo**: o resultado em 1 ou 2 frases.
    - **Escopo**: o que entra e o que fica de fora (no mínimo 1 item fora).
@@ -20,7 +20,8 @@ O plano guarda o estado de um trabalho longo, para que a próxima sessão retome
 ## Retomar (sessão nova)
 
 1. O índice lista os planos `active`. Abra só o plano da tarefa.
-2. Comece pela seção "Próxima sessão".
+2. Confira que está na branch `plan/<slug>`; se não estiver, `git switch plan/<slug>`.
+3. Comece pela seção "Próxima sessão".
 
 ## Antes de encerrar a sessão
 

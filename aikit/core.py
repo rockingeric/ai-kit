@@ -207,6 +207,11 @@ def is_tracked(root: Path, rel: str) -> bool:
     return bool(git(root, "ls-files", "--", rel))
 
 
+def current_branch(root: Path) -> str | None:
+    """Branch name, also on an unborn branch; None when detached or outside git."""
+    return git(root, "symbolic-ref", "--quiet", "--short", "HEAD") or None
+
+
 # --- Project ----------------------------------------------------------------
 
 
@@ -233,6 +238,33 @@ class Project:
     @property
     def max_age_days(self) -> int:
         return int(self.config.get("docs_max_age_days", 90))
+
+    @property
+    def enforce_branches(self) -> bool:
+        return bool((self.config.get("git") or {}).get("enforce_branches", True))
+
+    def default_branch(self) -> str:
+        configured = (self.config.get("git") or {}).get("default_branch")
+        if configured:
+            return configured
+        remote = git(self.root, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")
+        if remote:
+            return remote.split("/", 1)[1]
+        return git(self.root, "config", "init.defaultBranch") or "main"
+
+    def ensure_branch(self, name: str) -> str | None:
+        """Switch to `name`, creating it from HEAD if needed. Returns a note, or None if nothing changed."""
+        if not self.enforce_branches or git(self.root, "rev-parse", "--git-dir") is None:
+            return None
+        if current_branch(self.root) == name:
+            return None
+        exists = git(self.root, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}") is not None
+        args = ("switch", name) if exists else ("switch", "-c", name)
+        try:
+            subprocess.run(["git", *args], cwd=self.root, capture_output=True, text=True, check=True)
+        except subprocess.CalledProcessError as exc:
+            raise AikitError(f"não consegui trocar para a branch {name}: {exc.stderr.strip()}") from exc
+        return f"branch {name} {'(já existia)' if exists else 'criada'}; você está nela agora"
 
     def manifest(self) -> dict:
         path = self.ai / "manifest.json"

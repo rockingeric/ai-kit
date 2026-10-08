@@ -21,6 +21,14 @@
         "docs": {"type": "string"}
       }
     },
-    "docs_max_age_days": {"type": "integer", "minimum": 1}
+    "docs_max_age_days": {"type": "integer", "minimum": 1},
+    "git": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "default_branch": {"type": "string", "minLength": 1},
+        "enforce_branches": {"type": "boolean"}
+      }
+    }
   }
 }

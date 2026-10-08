@@ -143,7 +143,9 @@ def cmd_uninstall(args) -> int:
 def cmd_hook(args) -> int:
     from aikit import hook
 
-    handler = hook.pre_bash if args.event == "pre-bash" else hook.post_edit
+    handler = {"pre-bash": hook.pre_bash, "post-edit": hook.post_edit}.get(args.event)
+    if handler is None:  # settings newer than this checkout: never block the agent over it
+        return 0
     return handler(sys.stdin.read())
 
 
@@ -214,7 +216,7 @@ def parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_uninstall)
 
     s = sub.add_parser("hook", help="entrada dos hooks do Claude Code")
-    s.add_argument("event", choices=["post-edit", "pre-bash"])
+    s.add_argument("event", help="post-edit | pre-bash (eventos desconhecidos saem com 0)")
     s.set_defaults(func=cmd_hook)
     return p
 

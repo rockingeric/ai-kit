@@ -24,3 +24,11 @@ def test_kit_own_adrs_are_valid():
     assert report.errors == []
     superseded = {e.meta["id"]: e.meta["superseded_by"] for e in entries if e.meta["status"] == "superseded"}
     assert superseded == {"ADR-0004": "ADR-0014", "ADR-0005": "ADR-0015", "ADR-0011": "ADR-0016", "ADR-0012": "ADR-0017"}
+
+
+def test_unknown_hook_event_never_blocks(monkeypatch):
+    """Settings written by a newer kit must not lock the agent out on an older checkout."""
+    import io
+
+    monkeypatch.setattr("sys.stdin", io.StringIO('{"tool_input": {"command": "ls"}}'))
+    assert main(["hook", "evento-do-futuro"]) == 0

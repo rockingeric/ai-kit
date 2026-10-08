@@ -1,11 +1,11 @@
 ---
 id: ADR-0020
 title: Wishes com aprovação humana no lugar de planos
-status: proposed
+status: accepted
 date: 2026-10-08
 supersedes: null
 superseded_by: null
-body_sha: null
+body_sha: bb82176deb8ff0b4e3eb4dc93a5db243289c056655feda60dc4a1c7acdac2343
 tags: [wishes, governanca, hooks]
 summary: Wish nasce draft; humano aprova e só então nasce a branch wish/<slug>
 ---

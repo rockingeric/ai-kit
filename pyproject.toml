@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aikit"
+version = "0.1.0"
+description = "Personas, ADRs e contexto enxuto para coding agents, instalados em qualquer projeto"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["PyYAML>=6.0", "jsonschema>=4.18"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+aikit = "aikit.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["aikit"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

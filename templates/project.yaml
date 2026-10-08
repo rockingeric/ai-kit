@@ -1,0 +1,8 @@
+name: {{name}}
+stack: []
+commands: {}
+conventions: []
+paths:
+  adr: docs/decisions/
+  runbooks: docs/runbooks/
+docs_max_age_days: 90

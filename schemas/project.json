@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "project",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name"],
+  "properties": {
+    "name": {"type": "string", "minLength": 1},
+    "description": {"type": "string"},
+    "stack": {"type": "array", "items": {"type": "string"}},
+    "commands": {"type": "object", "additionalProperties": {"type": "string"}},
+    "conventions": {"type": "array", "items": {"type": "string"}},
+    "paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "src": {"type": "string"},
+        "tests": {"type": "string"},
+        "adr": {"type": "string"},
+        "runbooks": {"type": "string"},
+        "docs": {"type": "string"}
+      }
+    },
+    "docs_max_age_days": {"type": "integer", "minimum": 1}
+  }
+}

@@ -1,0 +1,3 @@
+# Exemplo: um overlay de dados pessoais somaria isto à persona security base.
+principles:
+  - "Exemplo de overlay: dado pessoal só sai do sistema com base legal registrada em ADR"

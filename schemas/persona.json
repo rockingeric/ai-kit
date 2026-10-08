@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "persona",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "model", "tools", "description", "role", "reads", "principles", "never"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+    "enabled": {"type": "boolean"},
+    "model": {"enum": ["fable", "opus", "sonnet", "haiku", "inherit"]},
+    "tools": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "description": {"type": "string", "minLength": 10, "maxLength": 300},
+    "role": {"type": "string", "minLength": 3},
+    "gates": {"type": "array", "items": {"type": "string"}},
+    "reads": {
+      "type": "array",
+      "items": {"enum": ["project", "decisions", "personas", "wishes", "tutorial", "how-to", "reference", "explanation"]}
+    },
+    "principles": {"type": "array", "items": {"type": "string"}},
+    "never": {"type": "array", "items": {"type": "string"}},
+    "outputs": {"type": "object", "additionalProperties": {"type": "string"}},
+    "handoff": {"type": "string"}
+  }
+}

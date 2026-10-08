@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "runbook-frontmatter",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "title", "last_verified", "summary"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^RB-[a-z0-9-]+$"},
+    "title": {"type": "string", "minLength": 3},
+    "trigger": {"type": "string"},
+    "last_verified": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+    "tags": {"type": "array", "items": {"type": "string"}},
+    "summary": {"type": "string", "minLength": 3, "maxLength": 80},
+    "type": {"const": "how-to"}
+  }
+}

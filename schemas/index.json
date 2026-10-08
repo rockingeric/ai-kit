@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "index",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["generated", "project", "personas"],
+  "properties": {
+    "generated": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+    "project": {"type": "string"},
+    "personas": {"type": "array", "items": {"type": "string"}},
+    "decisions_dir": {"type": "string"},
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "status"],
+        "properties": {
+          "id": {"type": "string"},
+          "status": {"type": "string"},
+          "path": {"type": "string"},
+          "tags": {"type": "array"},
+          "summary": {"type": "string"}
+        }
+      }
+    },
+    "docs": {
+      "type": "object",
+      "propertyNames": {"enum": ["tutorial", "how-to", "reference", "explanation"]},
+      "additionalProperties": {
+        "type": "array",
+        "items": {"type": "object", "required": ["path"]}
+      }
+    },
+    "wishes": {
+      "type": "array",
+      "items": {"type": "object", "required": ["slug"]}
+    }
+  }
+}

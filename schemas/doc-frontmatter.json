@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "doc-frontmatter",
+  "type": "object",
+  "properties": {
+    "type": {"enum": ["tutorial", "how-to", "reference", "explanation"]},
+    "title": {"type": "string"},
+    "summary": {"type": "string", "maxLength": 80},
+    "tags": {"type": "array", "items": {"type": "string"}}
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "matcher": "Edit|Write",
+  "hooks": [
+    {
+      "type": "command",
+      "command": "aikit hook post-edit",
+      "timeout": 60
+    }
+  ]
+}

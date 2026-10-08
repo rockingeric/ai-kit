@@ -1,16 +1,22 @@
 ---
 id: {{id}}
 title: {{title}}
-status: active
+status: draft
 created: {{date}}
 summary: {{summary}}
 adrs: []
 ---
-## Objetivo
+## Resumo
 
 ## Escopo
-- Entra:
-- Fica de fora:
+### Entra
+- 
+
+### Fica de fora
+- 
+
+## Decisões
+ADRs ligados vão em `adrs:` no frontmatter; aqui, só escolhas locais deste wish.
 
 ## Critérios de aceite
 - [ ] 

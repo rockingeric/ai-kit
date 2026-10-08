@@ -1,4 +1,4 @@
-"""Collect ADRs, runbooks, docs and plans; render .ai/index.yaml."""
+"""Collect ADRs, runbooks, docs and wishes; render .ai/index.yaml."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from aikit.merge import Persona
 
 INDEX_HEADER = "# Gerado por `aikit build`; não edite. Leia primeiro e abra só o que a tarefa pede.\n"
 COLLAPSED_STATUSES = {"superseded", "rejected"}
-OPEN_PLAN_STATUSES = ("active", "draft")  # done plans leave the index
+OPEN_WISH_STATUSES = ("approved", "draft")  # done wishes leave the index
 SUMMARY_MAX = 80
 
 
@@ -29,7 +29,7 @@ SUMMARY_MAX = 80
 class Entry:
     doc: Doc
     rel: str
-    kind: str  # adr | runbook | doc | note | plan
+    kind: str  # adr | runbook | doc | note | wish
     folder_type: str | None  # type implied by the folder; None for .ai/docs
 
     @property
@@ -75,8 +75,8 @@ def collect(project: Project) -> list[Entry]:
             add(path, "doc", doc_type)
     for path in _md_files(project.ai / "docs"):
         add(path, "note", None)
-    for path in _md_files(project.ai / "plans"):
-        add(path, "plan", None)
+    for path in _md_files(project.ai / "wishes"):
+        add(path, "wish", None)
     return entries
 
 
@@ -118,15 +118,15 @@ def _doc_item(entry: Entry) -> dict:
 
 def build_data(project: Project, personas: list[Persona], entries: list[Entry]) -> dict:
     adrs = sorted((e for e in entries if e.kind == "adr"), key=lambda e: e.rel, reverse=True)
-    plans = [
+    wishes = [
         {"path": e.rel, "status": e.meta["status"], **({"summary": s} if (s := _summary(e)) else {})}
         for e in entries
-        if e.kind == "plan" and e.meta.get("status") in OPEN_PLAN_STATUSES
+        if e.kind == "wish" and e.meta.get("status") in OPEN_WISH_STATUSES
     ]
-    plans.sort(key=lambda p: (OPEN_PLAN_STATUSES.index(p["status"]), p["path"]))
+    wishes.sort(key=lambda w: (OPEN_WISH_STATUSES.index(w["status"]), w["path"]))
     docs: dict[str, list[dict]] = {}
     for entry in entries:
-        if entry.kind in ("adr", "plan"):
+        if entry.kind in ("adr", "wish"):
             continue
         doc_type = entry.doc_type
         if doc_type in DIATAXIS:  # untyped notes are reported by lint, not indexed
@@ -136,8 +136,8 @@ def build_data(project: Project, personas: list[Persona], entries: list[Entry]) 
         "project": ".ai/project.yaml",
         "personas": [p.id for p in personas if p.enabled],
     }
-    if plans:
-        data["plans"] = plans
+    if wishes:
+        data["wishes"] = wishes
     if adrs:
         data["decisions_dir"] = project.rel(project.path("adr"))
         data["decisions"] = [_decision_item(e) for e in adrs]
@@ -151,9 +151,9 @@ def render(data: dict) -> str:
     lines.append(f"generated: {data['generated']}")
     lines.append(f"project: {data['project']}")
     lines.append(f"personas: {flow(data['personas'])}")
-    if "plans" in data:
-        lines.append("plans:  # trabalho em andamento; retome pelo plano active")
-        lines += [f"  - {flow(p)}" for p in data["plans"]]
+    if "wishes" in data:
+        lines.append("wishes:  # approved = em andamento (retome por ele); draft = aguarda aprovação humana")
+        lines += [f"  - {flow(w)}" for w in data["wishes"]]
     if "decisions" in data:
         lines.append(f"decisions_dir: {data['decisions_dir']}  # arquivo: <id>-*.md")
         lines.append("decisions:")

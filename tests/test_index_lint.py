@@ -1,5 +1,7 @@
+import pytest
+
 from aikit import build, lint, records, schemas
-from aikit.core import load_yaml
+from aikit.core import AikitError, load_yaml, parse_doc
 
 
 def test_index_groups_docs_by_folder_type(project):
@@ -39,34 +41,54 @@ def test_generated_date_only_changes_with_content(project, monkeypatch):
     assert "generated: 2026-12-01" in (project.ai / "index.yaml").read_text()
 
 
-def test_open_plans_are_indexed_and_done_plans_leave(project):
-    records.new_plan(project, "Migrar auth para JWT", "JWT com refresh")
-    draft, _ = records.new_plan(project, "Cache de catálogo")
-    draft.write_text(draft.read_text().replace("status: active", "status: draft"))
+def _fill_criteria(path, *items):
+    criteria = "\n".join(items)
+    path.write_text(path.read_text().replace("## Critérios de aceite\n- [ ] ", "## Critérios de aceite\n" + criteria))
+
+
+def test_open_wishes_are_indexed_and_done_wishes_leave(project):
+    jwt = records.new_wish(project, "Migrar auth para JWT", "JWT com refresh")
+    records.new_wish(project, "Cache de catálogo")
+    _fill_criteria(jwt, "- [ ] Login devolve JWT", "- [x] Refresh rotaciona")
+    records.approve_wish(project, "migrar-auth-para-jwt")
     build.run(project)
-    assert load_yaml(project.ai / "index.yaml")["plans"] == [
-        {"path": ".ai/plans/migrar-auth-para-jwt.md", "status": "active", "summary": "JWT com refresh"},
-        {"path": ".ai/plans/cache-de-catalogo.md", "status": "draft", "summary": "Cache de catálogo"},
+    assert load_yaml(project.ai / "index.yaml")["wishes"] == [
+        {"path": ".ai/wishes/migrar-auth-para-jwt.md", "status": "approved", "summary": "JWT com refresh"},
+        {"path": ".ai/wishes/cache-de-catalogo.md", "status": "draft", "summary": "Cache de catálogo"},
     ]
     assert lint.run(project).errors == []
 
-    path, open_items = records.finish_plan(project, "migrar-auth-para-jwt")
-    assert open_items == []  # template has an empty criterion line, not a real one
-    path.write_text(path.read_text().replace("status: done", "status: active").replace(
-        "## Critérios de aceite\n- [ ] ", "## Critérios de aceite\n- [ ] Login devolve JWT\n- [x] Refresh rotaciona"))
-    _, open_items = records.finish_plan(project, "PL-migrar-auth-para-jwt")
+    _, open_items = records.finish_wish(project, "WISH-migrar-auth-para-jwt")
     assert open_items == ["Login devolve JWT"]
     build.run(project)
-    plans = load_yaml(project.ai / "index.yaml")["plans"]
-    assert [p["status"] for p in plans] == ["draft"]
+    assert [w["status"] for w in load_yaml(project.ai / "index.yaml")["wishes"]] == ["draft"]
 
 
-def test_lint_checks_plan_frontmatter_and_adr_links(project):
-    path, _ = records.new_plan(project, "Plano")
-    path.write_text(path.read_text().replace("adrs: []", "adrs: [ADR-0009]").replace("status: active", "status: doing"))
+def test_wish_lifecycle_guards(project):
+    path = records.new_wish(project, "Wish vazio")
+    with pytest.raises(AikitError, match="critérios de aceite"):
+        records.approve_wish(project, "wish-vazio")  # template line `- [ ] ` doesn't count
+    with pytest.raises(AikitError, match="só wish approved"):
+        records.finish_wish(project, "wish-vazio")
+    _fill_criteria(path, "- [ ] Algo verificável")
+    records.approve_wish(project, "wish-vazio")
+    with pytest.raises(AikitError, match="só draft"):
+        records.approve_wish(project, "wish-vazio")
+    assert parse_doc(path).meta["approved"] == "2026-10-08"
+
+
+def test_lint_checks_wish_frontmatter_and_adr_links(project):
+    path = records.new_wish(project, "Wish")
+    path.write_text(path.read_text().replace("adrs: []", "adrs: [ADR-0009]").replace("status: draft", "status: doing"))
     errors = lint.run(project).errors
     assert any("status" in e for e in errors)
     assert any("ADR-0009, que não existe" in e for e in errors)
+
+
+def test_lint_warns_about_legacy_plans(project):
+    (project.ai / "plans").mkdir()
+    (project.ai / "plans" / "velho.md").write_text("---\nid: PL-velho\n---\n")
+    assert any("mova para .ai/wishes" in w for w in lint.run(project).warnings)
 
 
 def test_lint_diataxis_rules(project):

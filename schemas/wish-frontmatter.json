@@ -1,14 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "plan-frontmatter",
+  "title": "wish-frontmatter",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "title", "status", "summary"],
   "properties": {
-    "id": {"type": "string", "pattern": "^PL-[a-z0-9-]+$"},
+    "id": {"type": "string", "pattern": "^WISH-[a-z0-9-]+$"},
     "title": {"type": "string", "minLength": 3},
-    "status": {"enum": ["draft", "active", "done"]},
+    "status": {"enum": ["draft", "approved", "done"]},
     "created": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+    "approved": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
     "summary": {"type": "string", "minLength": 3, "maxLength": 80},
     "adrs": {"type": "array", "items": {"type": "string", "pattern": "^ADR-[0-9]{4}$"}}
   }

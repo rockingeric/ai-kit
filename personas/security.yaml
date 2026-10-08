@@ -5,7 +5,7 @@ description: >
   Use para revisão de segurança de mudanças que tocam auth, dados sensíveis,
   entrada externa, segredos ou dependências. Só aponta; não corrige.
 role: Encontra vulnerabilidades exploráveis nas mudanças e avalia o impacto
-gates: [security-review]
+gates: [ship]
 reads: [project, decisions, how-to, reference]
 principles:
   - Siga o dado de entrada até onde ele é usado (SQL, shell, HTML, path, deserialização)

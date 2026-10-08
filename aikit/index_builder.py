@@ -1,4 +1,4 @@
-"""Collect ADRs, runbooks, docs and Genie wishes; render .ai/index.yaml."""
+"""Collect ADRs, runbooks, docs and plans; render .ai/index.yaml."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from aikit.merge import Persona
 
 INDEX_HEADER = "# Gerado por `aikit build`; não edite. Leia primeiro e abra só o que a tarefa pede.\n"
 COLLAPSED_STATUSES = {"superseded", "rejected"}
+OPEN_PLAN_STATUSES = ("active", "draft")  # done plans leave the index
 SUMMARY_MAX = 80
 
 
@@ -28,7 +29,7 @@ SUMMARY_MAX = 80
 class Entry:
     doc: Doc
     rel: str
-    kind: str  # adr | runbook | doc | note
+    kind: str  # adr | runbook | doc | note | plan
     folder_type: str | None  # type implied by the folder; None for .ai/docs
 
     @property
@@ -74,36 +75,9 @@ def collect(project: Project) -> list[Entry]:
             add(path, "doc", doc_type)
     for path in _md_files(project.ai / "docs"):
         add(path, "note", None)
+    for path in _md_files(project.ai / "plans"):
+        add(path, "plan", None)
     return entries
-
-
-def collect_wishes(project: Project) -> list[dict]:
-    root = project.root / ".genie" / "wishes"
-    if not root.is_dir():
-        return []
-    wishes = []
-    for item in sorted(root.iterdir()):
-        if item.is_dir():
-            files = sorted(item.glob("*wish*.md")) or sorted(item.glob("*.md"))
-            slug, source = item.name, files[0] if files else None
-        elif item.suffix == ".md":
-            slug, source = re.sub(r"-wish$", "", item.stem), item
-        else:
-            continue
-        status = _wish_status(source) if source else None
-        wishes.append({"slug": slug, "status": status} if status else {"slug": slug})
-    return wishes
-
-
-def _wish_status(path: Path) -> str | None:
-    doc = parse_doc(path)
-    if doc.meta and doc.meta.get("status"):
-        return str(doc.meta["status"])
-    for line in doc.body.splitlines()[:40]:
-        m = re.search(r"status\W{0,4}:\W*\s*([A-Za-z][A-Za-z_-]*)", line, re.I)
-        if m:
-            return m.group(1)
-    return None
 
 
 def _summary(entry: Entry) -> str | None:
@@ -144,9 +118,15 @@ def _doc_item(entry: Entry) -> dict:
 
 def build_data(project: Project, personas: list[Persona], entries: list[Entry]) -> dict:
     adrs = sorted((e for e in entries if e.kind == "adr"), key=lambda e: e.rel, reverse=True)
+    plans = [
+        {"path": e.rel, "status": e.meta["status"], **({"summary": s} if (s := _summary(e)) else {})}
+        for e in entries
+        if e.kind == "plan" and e.meta.get("status") in OPEN_PLAN_STATUSES
+    ]
+    plans.sort(key=lambda p: (OPEN_PLAN_STATUSES.index(p["status"]), p["path"]))
     docs: dict[str, list[dict]] = {}
     for entry in entries:
-        if entry.kind == "adr":
+        if entry.kind in ("adr", "plan"):
             continue
         doc_type = entry.doc_type
         if doc_type in DIATAXIS:  # untyped notes are reported by lint, not indexed
@@ -156,13 +136,13 @@ def build_data(project: Project, personas: list[Persona], entries: list[Entry]) 
         "project": ".ai/project.yaml",
         "personas": [p.id for p in personas if p.enabled],
     }
+    if plans:
+        data["plans"] = plans
     if adrs:
         data["decisions_dir"] = project.rel(project.path("adr"))
         data["decisions"] = [_decision_item(e) for e in adrs]
     if docs:
         data["docs"] = {t: docs[t] for t in ("explanation", "how-to", "reference", "tutorial") if t in docs}
-    if wishes := collect_wishes(project):
-        data["wishes"] = wishes
     return data
 
 
@@ -171,6 +151,9 @@ def render(data: dict) -> str:
     lines.append(f"generated: {data['generated']}")
     lines.append(f"project: {data['project']}")
     lines.append(f"personas: {flow(data['personas'])}")
+    if "plans" in data:
+        lines.append("plans:  # trabalho em andamento; retome pelo plano active")
+        lines += [f"  - {flow(p)}" for p in data["plans"]]
     if "decisions" in data:
         lines.append(f"decisions_dir: {data['decisions_dir']}  # arquivo: <id>-*.md")
         lines.append("decisions:")
@@ -180,9 +163,6 @@ def render(data: dict) -> str:
         for doc_type, items in data["docs"].items():
             lines.append(f"  {doc_type}:")
             lines += [f"    - {flow(i)}" for i in items]
-    if "wishes" in data:
-        lines.append("wishes:")
-        lines += [f"  - {flow(w)}" for w in data["wishes"]]
     return "\n".join(lines) + "\n"
 
 

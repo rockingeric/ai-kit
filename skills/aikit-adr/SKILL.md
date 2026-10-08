@@ -1,6 +1,6 @@
 ---
 name: aikit-adr
-description: Registra uma decisão de arquitetura como ADR proposed (de uma conversa ou da síntese do council).
+description: Registra como ADR proposed uma escolha cara de desfazer ou que um agente contrariaria sem saber (tecnologia, padrão, contrato). Não use para escolha local e reversível.
 ---
 
 # Registrar ADR

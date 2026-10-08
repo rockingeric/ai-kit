@@ -1,4 +1,4 @@
-"""Persona YAML -> Claude Code subagent markdown, plus the AGENTS.md persona block."""
+"""Persona YAML -> Claude Code subagent markdown, plus the kit-owned block of AGENTS.md."""
 
 from __future__ import annotations
 
@@ -8,14 +8,39 @@ from aikit.core import GENERATED_MARK, Project, dump_yaml
 from aikit.merge import Persona
 
 AGENT_PREFIX = "aikit-"
-BLOCK_START = "<!-- aikit:personas:start -->"
-BLOCK_END = "<!-- aikit:personas:end -->"
+BLOCK_START = "<!-- aikit:start (gerado por `aikit build`; não edite) -->"
+BLOCK_END = "<!-- aikit:end -->"
+_BLOCK_RE = re.compile(r"<!-- aikit:(?:personas:)?start.*?-->.*?<!-- aikit:(?:personas:)?end -->", re.S)
+
+# Kit rules live in the generated block so `aikit build` updates every project.
+WORKFLOW_RULES = """\
+## Como trabalhar aqui (ai-kit)
+- Leia `.ai/index.yaml` antes de explorar o repo e abra só o que a tarefa pede.
+- Antes de começar uma tarefa, decida o artefato:
+  - cabe numa sessão e não restringe o futuro → só faça;
+  - escolha cara de desfazer, ou que um agente contrariaria sem saber → ADR (skill `aikit-adr`);
+  - trabalho de várias sessões → plano (skill `aikit-plan`); decisões estruturais dentro dele → ADR;
+  - na dúvida, pergunte ao humano em uma linha em vez de criar artefato.
+- Plano `active` no índice é trabalho em andamento: retome por ele e atualize "Próxima sessão" antes de parar.
+- ADR `accepted` é regra; para mudar, ADR novo com `--supersedes`. Só o humano aceita.
+- Procedimento operacional → `aikit runbook new "título"`.
+- `.claude/agents/aikit-*.md` é gerado: mude `.ai/personas/<id>.yaml` e rode `aikit build`."""
+
+# The pre-0.2 template shipped these rules as a hand-owned section; drop it if untouched.
+LEGACY_SECTION = """\
+## Como trabalhar aqui
+- Antes de explorar o repo, leia `.ai/index.yaml` e abra só o que a tarefa pede.
+- ADR `accepted` é regra do projeto: não contrarie sem um ADR novo que o substitua.
+- Decisão não trivial → skill `aikit-adr` (nasce `proposed`; só o humano aceita).
+- Procedimento operacional novo → `aikit runbook new "título"`.
+- `.claude/agents/aikit-*.md` é gerado: mude `.ai/personas/<id>.yaml` e rode `aikit build`.
+"""
 
 READS_LABELS = {
     "project": "`project` (stack, comandos, convenções)",
     "decisions": "`decisions` (ADRs em `decisions_dir`; `accepted` é regra)",
     "personas": "`personas`",
-    "wishes": "`wishes` (Genie)",
+    "plans": "`plans` (critérios de aceite do plano ativo)",
     "tutorial": "`docs.tutorial`",
     "how-to": "`docs.how-to` (runbooks)",
     "reference": "`docs.reference`",
@@ -76,8 +101,11 @@ def compile_persona(persona: Persona, project: Project) -> str:
 def render_agents_block(personas: list[Persona]) -> str:
     lines = [
         BLOCK_START,
-        "## Personas e gates",
-        "O dev é a thread principal. Delegue pelo nome; com o Genie, cada gate chama a persona listada.",
+        WORKFLOW_RULES,
+        "",
+        "## Personas",
+        "O dev é a thread principal; delegue pelo nome. Gates: `plan` e `adr` = consultar ao planejar "
+        "e decidir; `ship` = chamada pelo `/aikit-ship` antes do PR.",
     ]
     for p in personas:
         if not p.enabled:
@@ -89,8 +117,8 @@ def render_agents_block(personas: list[Persona]) -> str:
 
 
 def splice_agents_block(agents_md: str, block: str) -> str:
-    """Replace the generated block in AGENTS.md, or append it if missing."""
-    pattern = re.compile(re.escape(BLOCK_START) + r".*?" + re.escape(BLOCK_END), re.S)
-    if pattern.search(agents_md):
-        return pattern.sub(lambda _: block, agents_md, count=1)
+    """Replace the generated block in AGENTS.md (current or legacy markers), or append it."""
+    agents_md = agents_md.replace(LEGACY_SECTION + "\n", "").replace(LEGACY_SECTION, "")
+    if _BLOCK_RE.search(agents_md):
+        return _BLOCK_RE.sub(lambda _: block, agents_md, count=1)
     return agents_md.rstrip("\n") + "\n\n" + block + "\n"

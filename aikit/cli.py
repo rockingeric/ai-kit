@@ -92,6 +92,22 @@ def cmd_runbook(args) -> int:
     return _rebuild(project)
 
 
+def cmd_plan(args) -> int:
+    from aikit import records
+
+    project = load_project()
+    if args.action == "new":
+        path = records.new_plan(project, args.title, args.summary)
+        print(project.rel(path))
+        print("Preencha Objetivo, Escopo, Critérios de aceite e Passos.")
+    else:
+        path, open_items = records.finish_plan(project, args.ref)
+        print(f"{project.rel(path)}: done (saiu do índice)")
+        for item in open_items:
+            print(f"aviso: critério não marcado: {item}", file=sys.stderr)
+    return _rebuild(project)
+
+
 def cmd_backup(args) -> int:
     from aikit import backup
 
@@ -171,6 +187,17 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("ref")
     for name in ("new", "verify"):
         rb.choices[name].set_defaults(func=cmd_runbook)
+
+    pl = sub.add_parser("plan", help="planos de trabalho que atravessam sessões").add_subparsers(
+        dest="action", required=True
+    )
+    s = pl.add_parser("new", help="novo plano (active) em .ai/plans")
+    s.add_argument("title")
+    s.add_argument("--summary", help="até 80 caracteres")
+    s = pl.add_parser("done", help="conclui o plano e o tira do índice")
+    s.add_argument("ref")
+    for name in ("new", "done"):
+        pl.choices[name].set_defaults(func=cmd_plan)
 
     s = sub.add_parser("backup", help="copia .ai/ para seu repo privado de backup")
     s.add_argument("--to", help="diretório de backup (fica salvo para as próximas vezes)")

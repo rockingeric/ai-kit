@@ -11,10 +11,10 @@
     "tools": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
     "description": {"type": "string", "minLength": 10, "maxLength": 300},
     "role": {"type": "string", "minLength": 3},
-    "gates": {"type": "array", "items": {"type": "string"}},
+    "gates": {"type": "array", "items": {"enum": ["plan", "adr", "ship"]}},
     "reads": {
       "type": "array",
-      "items": {"enum": ["project", "decisions", "personas", "wishes", "tutorial", "how-to", "reference", "explanation"]}
+      "items": {"enum": ["project", "decisions", "personas", "plans", "tutorial", "how-to", "reference", "explanation"]}
     },
     "principles": {"type": "array", "items": {"type": "string"}},
     "never": {"type": "array", "items": {"type": "string"}},

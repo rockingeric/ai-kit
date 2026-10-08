@@ -4,7 +4,7 @@ Oct 8, 2026 · @Eric
 
 > Snapshot exportado do doc em https://claude.ai/code/artifact/d51060d6-ddf2-4197-97d8-bb0ef0b307ba (rev 44). O doc é a fonte principal.
 > **Pendente de sync**: revisão de 8 Out 2026 aplicada só neste arquivo (o doc não estava acessível); replicar lá.
-> **Status (8 Out 2026)**: fases 1 a 6 implementadas e testadas (35 testes); fase 7 (piloto) pendente.
+> **Status (8 Out 2026)**: fases 1 a 6 implementadas e testadas (38 testes); Genie substituído por planos e /aikit-ship (ADR-0018); fase 7 (piloto) pendente.
 
 ## Objetivo e escopo
 
@@ -19,7 +19,7 @@ O ai-kit é um repo seu, clonado uma vez na máquina, que instala em qualquer pr
 - Um `index.yaml` que o agente lê primeiro, para abrir só o que precisa
 - CLI `aikit` para instalar, compilar, validar e remover
 - 3 skills e 1 hook do Claude Code
-- Integração opcional com o Genie (o kit funciona sem ele)
+- Planos em `.ai/plans/` para trabalho que atravessa sessões, e o gate `/aikit-ship` antes do PR (substituem a integração com o Genie; ADR-0018)
 
 **Fora do escopo (v1)**
 
@@ -98,7 +98,7 @@ A mecânica do kit fica fora do git, listada num bloco `# >>> ai-kit` em `.git/i
 | `.claude/agents/aikit-*.md` | não | gerado pelo build | Subagents com cabeçalho "não editar" |
 | `.claude/skills/aikit-*` | não | copiado do kit | Os 3 skills |
 | `.claude/settings.local.json` | não | merge pelo init | Hook PostToolUse |
-| `.genie/` | não | Genie | Wishes, brainstorms, estado |
+| `.ai/plans/*.md` | não | `aikit plan new` + agente | Planos de trabalho; só `active` e `draft` entram no índice |
 
 **Conflito com arquivos do time**: se o projeto já tiver `CLAUDE.md` ou `AGENTS.md` versionados, o `init` não toca neles e avisa. Nesse caso o import do `.ai/AGENTS.md` vai por um caminho privado (ver Riscos).
 
@@ -132,7 +132,7 @@ tools: [Read, Grep, Glob, Write]
 description: >              # vira o description do subagent (auto-delegação)
   Use para decisões de arquitetura, tradeoffs e para escrever ADRs.
 role: Decide arquitetura com tradeoffs explícitos
-gates: [design-review, council]
+gates: [plan, adr]          # plan | adr | ship (ship = chamada pelo /aikit-ship)
 reads: [project, decisions, explanation]   # seções e tipos Diátaxis do index que ela consulta
 principles:
   - Escolha a opção mais simples que atende os requisitos de hoje
@@ -216,6 +216,8 @@ summary: Volta para a versão anterior e confirma saúde do serviço
 generated: 2026-10-08        # só data; hora completa muda a cada build e gera diff sem valor
 project: .ai/project.yaml
 personas: [architect, reviewer, security, qa, tech-writer]
+plans:  # trabalho em andamento; retome pelo plano active
+  - {path: .ai/plans/migrar-auth-para-jwt.md, status: active, summary: JWT com refresh}
 decisions_dir: docs/decisions  # arquivo: <id>-*.md (path fora das entradas: -34% de tamanho)
 decisions:
   - {id: ADR-0003, status: proposed, tags: [db, orm], summary: Drizzle no lugar de Prisma}
@@ -225,8 +227,6 @@ docs:                 # agrupado por tipo Diátaxis (inferido da pasta)
     - {path: docs/architecture/overview.md, summary: Módulos e fluxo de dados}
   how-to:
     - {id: RB-rollback-deploy, path: docs/runbooks/rollback-deploy.md, tags: [deploy, incidente], last_verified: 2026-10-08, summary: Reverter deploy com falha}
-wishes:
-  - {slug: auth-refresh, status: APPROVED}
 ```
 
 Dieta do índice, para caber nos ~2k tokens conforme o projeto cresce: `summary` com no máximo 80 caracteres (o `lint` rejeita acima disso), ADRs `superseded`/`rejected` reduzidos a `{id, status}`, ADRs sem `path` (vem de `decisions_dir`), grupos vazios omitidos e `generated` só com a data, que só muda quando o conteúdo muda. Medido: 17 ADRs custam ~510 tokens. Orçamentos completos na seção Contrato de contexto.
@@ -248,38 +248,40 @@ Divisão de trabalho: o CLI faz o mecânico e determinístico; os skills fazem o
 | `aikit adr reject 0003` | Marca um ADR `proposed` como rejected |
 | `aikit runbook new "título"` | Cria runbook do template em paths.runbooks com last_verified de hoje |
 | `aikit runbook verify <slug>` | Marca o runbook como verificado hoje |
+| `aikit plan new "título"` | Cria plano `active` em `.ai/plans/` (objetivo, escopo, critérios de aceite, passos, próxima sessão) |
+| `aikit plan done <slug>` | Conclui o plano (sai do índice) e avisa critérios não marcados |
 | `aikit lint --refs` | Também acusa paths citados em docs que não existem (a parte mecânica do docs-sync) |
 | `aikit hook post-edit` | Entrada do hook PostToolUse (lê o JSON do stdin) |
 | `aikit backup` | Copia `.ai/` (project.yaml, overrides, notas privadas) para um repo privado seu, uma pasta por projeto; ADRs e runbooks já viajam no git do projeto |
 | `aikit doctor` | Checa exclude, links, build em dia, versão do kit vs projeto, idade do último backup |
 | `aikit uninstall` | Remove só o que está no manifesto, tira só a entrada do hook do settings.local.json e limpa o exclude; `docs/` inteiro fica — é do time |
 
-Todo comando que muta estado (`adr new/supersede/accept`, `runbook new`) roda `build` implicitamente ao final — o build é rápido e idempotente. Assim o índice nunca fica desatualizado nem quando você edita fora do Claude Code; o hook vira redundância para edições do agente, não a única garantia.
+Todo comando que muta estado (`adr`, `runbook`, `plan`) roda `build` implicitamente ao final — o build é rápido e idempotente. Assim o índice nunca fica desatualizado nem quando você edita fora do Claude Code; o hook vira redundância para edições do agente, não a única garantia.
 
 **Skills (copiados para `.claude/skills/`)**
 
-Todos com prefixo `aikit-`, pela mesma razão dos subagents: skill sem prefixo pode colidir com skill do usuário ou do time. `aikit-onboard` e `aikit-docs-sync` são acionados por você (`/nome`) e usam `disable-model-invocation: true`, o que tira a description deles do contexto fixo; só `aikit-adr` fica disponível para o modelo.
+Todos com prefixo `aikit-`, pela mesma razão dos subagents: skill sem prefixo pode colidir com skill do usuário ou do time. `aikit-onboard`, `aikit-ship` e `aikit-docs-sync` são acionados por você (`/nome`) e usam `disable-model-invocation: true`, o que tira a description deles do contexto fixo; só `aikit-adr` e `aikit-plan` ficam disponíveis para o modelo, e as descriptions deles fazem o roteamento.
 
 - `aikit-onboard`: lê o repo, preenche `project.yaml` e o `AGENTS.md`, roda `aikit build`. Roda uma vez por projeto.
-- `aikit-adr`: a partir de uma conversa ou saída do council, chama `aikit adr new` e escreve Contexto, Opções, Decisão, Consequências. Termina imprimindo o comando pronto (`aikit adr accept NNNN`) para você rodar, já que só você aceita.
+- `aikit-adr`: chama `aikit adr new` e escreve Contexto, Opções, Decisão, Consequências. Termina imprimindo o comando pronto (`aikit adr accept NNNN`) para você rodar, já que só você aceita.
+- `aikit-plan`: cria ou retoma um plano para trabalho de várias sessões; antes de encerrar a sessão, atualiza "Próxima sessão".
+- `aikit-ship`: gate antes do PR. Roda teste e lint, chama as personas de gate `ship` em paralelo (security só se o diff for sensível), lista ADRs `proposed` pendentes e devolve PODE ABRIR PR, CORRIGIR ou BLOQUEADO.
 - `aikit-docs-sync`: o tech-writer compara `.ai/docs/`, ADRs e runbooks com o código (comandos e paths citados ainda existem?) e propõe correções, sem aplicar sozinho.
+
+**Regra de decisão (no bloco gerado do `AGENTS.md`)**: cabe numa sessão e não restringe o futuro → só faça; escolha cara de desfazer → ADR; várias sessões → plano; na dúvida, pergunte. Não há gateway que classifica cada pedido: custaria em todo pedido para acertar a minoria. A checagem "decisão estrutural sem ADR" acontece uma vez por PR, no reviewer, sobre o diff real. As regras do kit ficam no bloco gerado para que `aikit build` as atualize em todos os projetos.
 
 **Hook (`.claude/settings.local.json`)**
 
 - `PostToolUse` em `Edit|Write` roda `aikit hook post-edit`, que lê `tool_input.file_path` do stdin e só faz build se o caminho estiver em `.ai/**` ou `docs/**`.
 - Se o build achar problema (ex.: override inválido), o hook sai com código 2 e a mensagem volta para o Claude corrigir. O comando é gravado com caminho absoluto do `aikit`, porque o shell do hook pode não ter o mesmo PATH.
 
-## Integração com Genie
+## Sem Genie (ADR-0018)
 
-O Genie roda o loop; o kit só decide quem atua em cada gate. Sem o Genie, as personas continuam chamáveis pelo nome.
-
-[diagrama no doc: loop do Genie · 8 etapas, 4 com persona do kit]
-
-O architect também roda no `council`, cuja síntese vira ADR `proposed`. O mapeamento persona → gate fica no `AGENTS.md` gerado, então o Genie lê sem nenhuma alteração nele.
+A integração com o Genie foi removida em 8 Out 2026. Instalado, ele somava 18 skills globais ao contexto de toda sessão, e três se sobrepunham às personas. As duas coisas que ele dava e que faziam falta foram cobertas com peças pequenas: planos (estado entre sessões) e `/aikit-ship` (gate de revisão que não depende de lembrar). O que fica de fora é a execução autônoma e paralela de tarefas longas.
 
 ## Fases
 
-Sete fases curtas, cada uma fecha com um teste que dá para rodar. Dá para dar cada fase como um wish do Genie.
+Sete fases curtas, cada uma fecha com um teste que dá para rodar.
 
 1. **Esqueleto e ADRs do kit**
    - Repo, `pyproject.toml`, `uv tool install -e`, `aikit --help` funcionando
@@ -295,7 +297,7 @@ Sete fases curtas, cada uma fecha com um teste que dá para rodar. Dá para dar 
    - `aikit backup` (adiantado da v2): sem ele, um clone novo perde o `.ai/` (project.yaml, overrides, notas)
    - Pronto quando: init + uninstall num repo fixture deixam o `git status` limpo fora de `docs/`; `docs/decisions/` e `docs/runbooks/` criados no init permanecem após o uninstall
 4. **ADRs e índice**
-   - `adr new`, `adr supersede`, `adr accept` (grava `body_sha`), `index_builder.py` lendo frontmatters, personas, `.ai/docs` e `.genie/wishes`
+   - `adr new`, `adr supersede`, `adr accept` (grava `body_sha`), `index_builder.py` lendo frontmatters, personas, `.ai/docs` e `.ai/plans`
    - `runbook new`, tipo Diátaxis inferido da pasta (frontmatter só para exceção e `.ai/docs/`), índice agrupado por tipo, aviso de `last_verified` vencido
    - Pronto quando: superseder um ADR atualiza os dois arquivos e o índice; `lint` acusa ADR `accepted` sem `body_sha` ou com corpo que não bate com ele
 5. **Conteúdo das 5 personas e templates**
@@ -306,9 +308,9 @@ Sete fases curtas, cada uma fecha com um teste que dá para rodar. Dá para dar 
    - `aikit-onboard`, `aikit-adr`, `aikit-docs-sync`; hook PostToolUse
    - Pronto quando: editar uma persona override pelo Claude dispara o build sozinho
 7. **Piloto em 2 repos reais e overlay**
-   - Um repo Python, um Next.js; Genie instalado em um deles
+   - Um repo Python, um Next.js
    - Overlay `_example` documentado
-   - Pronto quando: 3 wishes reais rodados com as personas nos gates e pelo menos 1 ADR aceito via PR
+   - Pronto quando: 3 tarefas reais entregues com `/aikit-ship` antes do PR, pelo menos 1 plano retomado em sessão nova e 1 ADR aceito via PR
 
 ## Riscos e pontos a verificar
 
@@ -317,7 +319,7 @@ Verificados na documentação do Claude Code em 8 Out 2026 (code.claude.com/docs
 - [x] **Import privado quando o time já tem `CLAUDE.md`**: `CLAUDE.local.md` não está deprecado e é lido junto do `CLAUDE.md`. O `init` grava o import nele (testado)
 - [x] **Colisão de nomes de subagent**: resolvido, os gerados sempre levam prefixo, então um `reviewer.md` do time não colide com o gerado (`aikit-reviewer`)
 - [x] **Merge do hook**: o `init` mescla o JSON e o `uninstall` tira só a entrada do kit, preservando o resto (testado)
-- [ ] **Caminhos fixos do Genie**: confirmar no piloto que `.genie/` não é configurável e se o time quer versionar wishes (hoje o exclude cobre `.genie/` inteiro); confirmar também os nomes dos gates do loop do Genie contra os do kit (design-review, council, code-review, security-review, qa, docs)
+- [x] **Caminhos fixos do Genie**: superado pelo ADR-0018 (integração removida). Registro: o `genie init` versiona `.genie/` e ignora o próprio `genie.db` no `.gitignore` do projeto
 - [x] **Recarga de subagents na sessão**: o Claude Code relê `.claude/agents/` alterados sem reiniciar; a exceção é o primeiro arquivo num diretório `agents/` que não existia quando a sessão abriu (aí vale na próxima sessão). Hook testado ao vivo: editar um override pelo Claude recompilou o subagent
 - [x] **AGENTS.md nativo**: o Claude Code lê `AGENTS.md` só quando não há `CLAUDE.md`; como o kit cria `CLAUDE.md` com o import, o symlink serve a Codex e Cursor
 
@@ -325,5 +327,5 @@ Riscos de uso:
 
 - **Clone novo perde o privado**: o `.ai/` não viaja com o repo (ADRs e runbooks agora viajam, em `docs/`). Sobram project.yaml, overrides e notas. Mitigação já na v1 (fase 3): `aikit backup` para um repo privado seu, por projeto. Backup manual vai ser esquecido: o `doctor` avisa quando o último passar de 7 dias; auto-commit no build fica para v2
 - **Setup visível nos PRs do cliente**: ADRs `proposed` escritos por agente aparecem no git antes de você aceitar. Custo aceito na decisão 4; se incomodar num projeto, aceite ou descarte antes do push
-- **Custo de tokens**: cada revisor a mais soma. Medir com `genie wish report` no piloto e cortar persona que não muda resultado
+- **Custo de tokens**: cada revisor a mais soma. Medir no piloto quantas vezes cada persona do `/aikit-ship` muda o veredito, e cortar a que não muda
 - **Deriva do kit**: projetos com versão velha do kit. O `doctor` compara versão gravada em `.ai/` com a do kit

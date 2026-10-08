@@ -1,7 +1,7 @@
 import yaml
 
 from aikit import build, schemas
-from aikit.compile_personas import compile_persona
+from aikit.compile_personas import LEGACY_SECTION, compile_persona
 from aikit.core import parse_doc
 from aikit.lint import PERSONA_MAX_LINES
 from aikit.merge import merge, resolve
@@ -57,6 +57,28 @@ def test_overlay_then_project_override(project):
         "kit:overlays/_example/personas/security.yaml",
         ".ai/personas/security.yaml",
     ]
+
+
+def test_agents_block_carries_kit_rules_and_gates(project):
+    text = (project.ai / "AGENTS.md").read_text()
+    assert "skill `aikit-plan`" in text and "na dúvida, pergunte" in text
+    assert "- `aikit-architect`: plan, adr" in text
+    assert "- `aikit-tech-writer`: sob demanda" in text
+    assert text.count("## Como trabalhar aqui") == 1
+    assert text.count("\n") <= 60
+
+
+def test_legacy_block_and_section_are_migrated(project):
+    legacy = (
+        "# proj\n\n## Projeto\nAlgo.\n\n" + LEGACY_SECTION + "\n"
+        "<!-- aikit:personas:start -->\n## Personas e gates\n- velho\n<!-- aikit:personas:end -->\n"
+    )
+    (project.ai / "AGENTS.md").write_text(legacy)
+    build.run(project)
+    text = (project.ai / "AGENTS.md").read_text()
+    assert "aikit:personas:start" not in text and "- velho" not in text
+    assert "Antes de explorar o repo" not in text  # untouched legacy section removed
+    assert text.startswith("# proj\n\n## Projeto\nAlgo.\n\n<!-- aikit:start")
 
 
 def test_disabled_persona_is_removed_from_agents(project):

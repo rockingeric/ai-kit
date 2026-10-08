@@ -23,7 +23,7 @@ from aikit.core import (
 
 IMPORT_LINE = "@.ai/AGENTS.md"
 HOOK_MARK = "hook post-edit"
-BASE_EXCLUDES = ["/.ai/", "/.claude/agents/aikit-*", "/.claude/skills/aikit-*", "/.claude/settings.local.json", "/.genie/"]
+BASE_EXCLUDES = ["/.ai/", "/.claude/agents/aikit-*", "/.claude/skills/aikit-*", "/.claude/settings.local.json"]
 
 
 def _template(filename: str, **values: str) -> str:
@@ -88,7 +88,8 @@ def init(start: Path, overlays: list[str]) -> list[str]:
     previous = project.manifest() if (project.ai / "manifest.json").is_file() else {}
     files: set[str] = set(previous.get("files", []))
     edits: list[dict] = list(previous.get("edits", []))
-    excludes = list(previous.get("exclude", BASE_EXCLUDES))
+    kept = [e for e in previous.get("exclude", []) if e not in BASE_EXCLUDES and e != "/.genie/"]
+    excludes = BASE_EXCLUDES + kept
     notes: list[str] = []
 
     kit = kit_root()

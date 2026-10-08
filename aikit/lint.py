@@ -127,6 +127,13 @@ def _check_docs(project: Project, entries: list[Entry], report: Report) -> None:
                         f"last_verified há {age} dias (limite {project.max_age_days}); "
                         "revise e rode `aikit runbook verify`",
                     )
+        elif entry.kind == "plan":
+            for err in schemas.errors("plan-frontmatter", meta):
+                report.error(entry.rel, err)
+            for adr in meta.get("adrs") or []:
+                if not any(e.kind == "adr" and e.meta.get("id") == adr for e in entries):
+                    report.error(entry.rel, f"cita {adr}, que não existe")
+            continue
         elif entry.kind in ("doc", "note"):
             for err in schemas.errors("doc-frontmatter", meta):
                 report.error(entry.rel, err)

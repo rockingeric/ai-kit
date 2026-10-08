@@ -31,9 +31,13 @@
         "items": {"type": "object", "required": ["path"]}
       }
     },
-    "wishes": {
+    "plans": {
       "type": "array",
-      "items": {"type": "object", "required": ["slug"]}
+      "items": {
+        "type": "object",
+        "required": ["path", "status"],
+        "properties": {"status": {"enum": ["draft", "active"]}}
+      }
     }
   }
 }

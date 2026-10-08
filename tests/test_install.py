@@ -43,6 +43,7 @@ def test_docs_survive_uninstall_and_are_versionable(repo):
 def test_init_is_idempotent(repo):
     install.init(repo, [])
     first = exclude.exclude_file(repo).read_text()
+    assert "/.genie/" not in first
     settings = (repo / ".claude/settings.local.json").read_text()
     install.init(repo, [])
     assert exclude.exclude_file(repo).read_text() == first

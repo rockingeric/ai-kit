@@ -39,16 +39,34 @@ def test_generated_date_only_changes_with_content(project, monkeypatch):
     assert "generated: 2026-12-01" in (project.ai / "index.yaml").read_text()
 
 
-def test_genie_wishes_are_indexed(project):
-    wishes = project.root / ".genie/wishes"
-    (wishes / "auth-refresh").mkdir(parents=True)
-    (wishes / "auth-refresh/auth-refresh-wish.md").write_text("# Wish\n\n**Status:** APPROVED\n")
-    (wishes / "billing-wish.md").write_text("---\nstatus: DRAFT\n---\n# Billing\n")
+def test_open_plans_are_indexed_and_done_plans_leave(project):
+    records.new_plan(project, "Migrar auth para JWT", "JWT com refresh")
+    draft = records.new_plan(project, "Cache de catálogo")
+    draft.write_text(draft.read_text().replace("status: active", "status: draft"))
     build.run(project)
-    assert load_yaml(project.ai / "index.yaml")["wishes"] == [
-        {"slug": "auth-refresh", "status": "APPROVED"},
-        {"slug": "billing", "status": "DRAFT"},
+    assert load_yaml(project.ai / "index.yaml")["plans"] == [
+        {"path": ".ai/plans/migrar-auth-para-jwt.md", "status": "active", "summary": "JWT com refresh"},
+        {"path": ".ai/plans/cache-de-catalogo.md", "status": "draft", "summary": "Cache de catálogo"},
     ]
+    assert lint.run(project).errors == []
+
+    path, open_items = records.finish_plan(project, "migrar-auth-para-jwt")
+    assert open_items == []  # template has an empty criterion line, not a real one
+    path.write_text(path.read_text().replace("status: done", "status: active").replace(
+        "## Critérios de aceite\n- [ ] ", "## Critérios de aceite\n- [ ] Login devolve JWT\n- [x] Refresh rotaciona"))
+    _, open_items = records.finish_plan(project, "PL-migrar-auth-para-jwt")
+    assert open_items == ["Login devolve JWT"]
+    build.run(project)
+    plans = load_yaml(project.ai / "index.yaml")["plans"]
+    assert [p["status"] for p in plans] == ["draft"]
+
+
+def test_lint_checks_plan_frontmatter_and_adr_links(project):
+    path = records.new_plan(project, "Plano")
+    path.write_text(path.read_text().replace("adrs: []", "adrs: [ADR-0009]").replace("status: active", "status: doing"))
+    errors = lint.run(project).errors
+    assert any("status" in e for e in errors)
+    assert any("ADR-0009, que não existe" in e for e in errors)
 
 
 def test_lint_diataxis_rules(project):

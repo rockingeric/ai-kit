@@ -1,7 +1,8 @@
-"""ADR and runbook lifecycle: new, supersede, accept, reject, verify."""
+"""ADR, runbook and plan lifecycle: new, supersede, accept, reject, verify, done."""
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from aikit.core import (
@@ -162,3 +163,37 @@ def verify_runbook(project: Project, ref: str) -> Path:
         raise AikitError(f"runbook {slug} não encontrado em {project.rel(project.path('runbooks'))}")
     set_fields(path, {"last_verified": today().isoformat()})
     return path
+
+
+def _plan_path(project: Project, ref: str) -> Path:
+    slug = ref.removeprefix("PL-").removesuffix(".md")
+    path = project.ai / "plans" / f"{slug}.md"
+    if not path.is_file():
+        raise AikitError(f"plano {slug} não encontrado em .ai/plans")
+    return path
+
+
+def new_plan(project: Project, title: str, summary: str | None = None) -> Path:
+    slug = slugify(title)
+    path = project.ai / "plans" / f"{slug}.md"
+    if path.exists():
+        raise AikitError(f"{project.rel(path)} já existe")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        _render(
+            "plan.md",
+            {"id": f"PL-{slug}", "title": title, "date": today().isoformat(), "summary": _short(summary or title)},
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def finish_plan(project: Project, ref: str) -> tuple[Path, list[str]]:
+    """Mark a plan done; return it with the acceptance criteria still unchecked."""
+    path = _plan_path(project, ref)
+    body = parse_doc(path).body
+    section = re.search(r"^## Critérios de aceite\n(.*?)(?=^## |\Z)", body, re.S | re.M)
+    open_items = re.findall(r"^- \[ \] *(\S.*)$", section.group(1), re.M) if section else []
+    set_fields(path, {"status": "done"})
+    return path, open_items

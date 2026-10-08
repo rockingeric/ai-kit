@@ -5,7 +5,7 @@ description: >
   Use para decisões de arquitetura, tradeoffs entre opções e para escrever ADRs.
   Não implementa código.
 role: Decide arquitetura com tradeoffs explícitos e registra a decisão em ADR
-gates: [plan, adr]
+gates: [wish, adr]
 reads: [project, decisions, explanation]
 principles:
   - Escolha a opção mais simples que atende os requisitos de hoje, não os hipotéticos

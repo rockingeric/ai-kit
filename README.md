@@ -29,16 +29,17 @@ Depois, no Claude Code: `/aikit-onboard`. Ele lê o repo e preenche `.ai/project
 
 ## Dia a dia
 
-Antes de cada tarefa, o agente segue uma regra que fica no `AGENTS.md`: se cabe numa sessão e não restringe o futuro, só faz; se é uma escolha cara de desfazer, abre ADR; se atravessa várias sessões, abre plano.
+Antes de cada tarefa, o agente segue uma regra que fica no `AGENTS.md`: se cabe numa sessão e não restringe o futuro, só faz; se é uma escolha cara de desfazer, abre ADR; se atravessa várias sessões, abre um wish, que você aprova antes de o trabalho começar.
 
 | Situação | O que fazer |
 | --- | --- |
-| Trabalho de várias sessões | O agente usa o skill `aikit-plan` (ou `aikit plan new "..."`); a sessão seguinte retoma pelo plano |
+| Trabalho de várias sessões | O agente usa o skill `aikit-wish` (ou `aikit wish new "..."`) e para no `draft`; a sessão seguinte retoma pelo wish |
+| Aprovar o escopo | Você revisa o wish e roda `aikit wish approve <slug>`: ele vira `approved` e nasce a branch `wish/<slug>` |
 | Antes de abrir o PR | `/aikit-ship`: testes, lint e as personas de revisão; devolve o veredito |
-| Plano concluído | `aikit plan done <slug>` (sai do índice) |
-| Começar trabalho com commit | Branch própria: `git switch -c <tipo>/<slug>` (o `aikit plan new` já cria `plan/<slug>`). O Claude não consegue commitar na branch padrão |
+| Wish concluído | `aikit wish done <slug>` (sai do índice) |
+| Começar trabalho com commit | Branch própria: `git switch -c <tipo>/<slug>` (o `aikit wish approve` já cria `wish/<slug>`). O Claude não consegue commitar na branch padrão |
 | Decisão não trivial | O agente usa o skill `aikit-adr`; o ADR nasce `proposed` em `docs/decisions/` |
-| Aceitar a decisão | `aikit adr accept 0007` (grava `body_sha`, o corpo fica imutável) ou `aikit adr reject 0007` |
+| Aceitar a decisão | `aikit adr accept 0007` (só você: o Claude é bloqueado de rodar) (grava `body_sha`, o corpo fica imutável) ou `aikit adr reject 0007` |
 | Decisão substitui outra | `aikit adr new "..." --supersedes 0003` ou `aikit adr supersede 0003 0007` |
 | Procedimento operacional | `aikit runbook new "Reverter deploy" --trigger "5xx após deploy"` |
 | Runbook revisado | `aikit runbook verify reverter-deploy` |
@@ -53,19 +54,19 @@ O índice se mantém sozinho. O hook `PostToolUse` roda `aikit build` quando o a
 
 ### Sessões
 
-Abra uma sessão nova a cada tarefa: o que importa fica no índice, nos planos e nos ADRs, e não no histórico da conversa. Também abra uma sessão nova depois de mudar o `.ai/AGENTS.md`, porque ele só é lido quando a sessão começa. Overrides de persona, ADRs e planos valem na sessão aberta.
+Abra uma sessão nova a cada tarefa: o que importa fica no índice, nos wishes e nos ADRs, e não no histórico da conversa. Também abra uma sessão nova depois de mudar o `.ai/AGENTS.md`, porque ele só é lido quando a sessão começa. Overrides de persona, ADRs e wishes valem na sessão aberta.
 
 ## Personas
 
 | Persona | Modelo | Gates | Lê do índice |
 | --- | --- | --- | --- |
-| `aikit-architect` | opus | plan, adr | project, decisions, explanation |
+| `aikit-architect` | opus | wish, adr | project, decisions, explanation |
 | `aikit-reviewer` | sonnet | ship | project, decisions, reference |
 | `aikit-security` | opus | ship (se o diff for sensível) | project, decisions, how-to, reference |
-| `aikit-qa` | sonnet | ship | project, plans, how-to |
+| `aikit-qa` | sonnet | ship | project, wishes, how-to |
 | `aikit-tech-writer` | haiku | sob demanda | todos os tipos de doc |
 
-`plan` e `adr` indicam quem consultar ao planejar e ao decidir; `ship` indica quem o `/aikit-ship` chama.
+`wish` e `adr` indicam quem consultar ao planejar e ao decidir; `ship` indica quem o `/aikit-ship` chama.
 
 O dev é a thread principal do Claude, não um subagent. Para ajustar uma persona num projeto, crie `.ai/personas/<id>.yaml` só com o que muda e rode `aikit build`. Listas somam e escalares substituem. `enabled: false` desliga a persona.
 
@@ -76,7 +77,7 @@ O dev é a thread principal do Claude, não um subagent. Para ajustar uma person
 | `docs/decisions/` | sim | ADRs (explanation) |
 | `docs/runbooks/` | sim | Runbooks (how-to) |
 | `docs/architecture/`, `reference/`, `guides/` | sim | Nascem com o primeiro doc (explanation, reference, tutorial) |
-| `.ai/` | não | `project.yaml`, `AGENTS.md`, `index.yaml`, `plans/`, overrides, notas, manifesto |
+| `.ai/` | não | `project.yaml`, `AGENTS.md`, `index.yaml`, `wishes/`, overrides, notas, manifesto |
 | `.claude/agents/aikit-*.md` | não | Subagents gerados (não edite) |
 | `.claude/skills/aikit-*` | não | Skills copiados do kit |
 | `CLAUDE.md` / `CLAUDE.local.md` | não | Importa `@.ai/AGENTS.md`. Se o time já versiona um `CLAUDE.md`, o import vai para `CLAUDE.local.md` |

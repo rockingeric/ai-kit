@@ -57,7 +57,11 @@ def plan(project: Project) -> BuildPlan:
             if path not in expected and GENERATED_MARK in path.read_text(encoding="utf-8"):
                 result.stale.append(path)
 
-    if (project.ai / "manifest.json").is_file():  # skills only go into installed projects
+    if (project.ai / "manifest.json").is_file():  # skills and hooks only go into installed projects
+        from aikit.install import merged_settings  # install imports build
+
+        settings = project.root / ".claude" / "settings.local.json"
+        result.writes[settings] = merged_settings(settings)
         skills_src = kit_root() / "skills"
         for src in sorted(skills_src.rglob("*")):
             if src.is_file():

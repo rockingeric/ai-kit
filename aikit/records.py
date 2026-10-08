@@ -173,11 +173,13 @@ def _plan_path(project: Project, ref: str) -> Path:
     return path
 
 
-def new_plan(project: Project, title: str, summary: str | None = None) -> Path:
+def new_plan(project: Project, title: str, summary: str | None = None) -> tuple[Path, str | None]:
+    """Create the plan and put the repo on its branch `plan/<slug>`. Returns (path, branch note)."""
     slug = slugify(title)
     path = project.ai / "plans" / f"{slug}.md"
     if path.exists():
         raise AikitError(f"{project.rel(path)} já existe")
+    note = project.ensure_branch(f"plan/{slug}")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         _render(
@@ -186,7 +188,7 @@ def new_plan(project: Project, title: str, summary: str | None = None) -> Path:
         ),
         encoding="utf-8",
     )
-    return path
+    return path, note
 
 
 def finish_plan(project: Project, ref: str) -> tuple[Path, list[str]]:

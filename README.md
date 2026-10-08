@@ -36,6 +36,7 @@ Antes de cada tarefa, o agente segue uma regra que fica no `AGENTS.md`: se cabe 
 | Trabalho de várias sessões | O agente usa o skill `aikit-plan` (ou `aikit plan new "..."`); a sessão seguinte retoma pelo plano |
 | Antes de abrir o PR | `/aikit-ship`: testes, lint e as personas de revisão; devolve o veredito |
 | Plano concluído | `aikit plan done <slug>` (sai do índice) |
+| Começar trabalho com commit | Branch própria: `git switch -c <tipo>/<slug>` (o `aikit plan new` já cria `plan/<slug>`). O Claude não consegue commitar na branch padrão |
 | Decisão não trivial | O agente usa o skill `aikit-adr`; o ADR nasce `proposed` em `docs/decisions/` |
 | Aceitar a decisão | `aikit adr accept 0007` (grava `body_sha`, o corpo fica imutável) ou `aikit adr reject 0007` |
 | Decisão substitui outra | `aikit adr new "..." --supersedes 0003` ou `aikit adr supersede 0003 0007` |
@@ -45,6 +46,8 @@ Antes de cada tarefa, o agente segue uma regra que fica no `AGENTS.md`: se cabe 
 | Saúde da instalação | `aikit doctor` |
 | Backup do `.ai/` | `aikit backup` |
 | Remover o kit | `aikit uninstall` (o `docs/` fica) |
+
+Branches: o kit impede o Claude de commitar na branch padrão (hook `PreToolUse`), e o `/aikit-ship` bloqueia o PR nela. A branch padrão vem de `origin/HEAD`, ou de `git.default_branch` no `.ai/project.yaml`; `git.enforce_branches: false` desliga a regra.
 
 O índice se mantém sozinho. O hook `PostToolUse` roda `aikit build` quando o agente edita `.ai/` ou `docs/`, e todo comando `adr` e `runbook` também roda o build ao final.
 

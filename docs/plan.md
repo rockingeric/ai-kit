@@ -4,7 +4,7 @@ Oct 8, 2026 · @Eric
 
 > Snapshot exportado do doc em https://claude.ai/code/artifact/d51060d6-ddf2-4197-97d8-bb0ef0b307ba (rev 44). O doc é a fonte principal.
 > **Pendente de sync**: revisão de 8 Out 2026 aplicada só neste arquivo (o doc não estava acessível); replicar lá.
-> **Status (8 Out 2026)**: fases 1 a 6 implementadas e testadas (38 testes); Genie substituído por planos e /aikit-ship (ADR-0018); fase 7 (piloto) pendente.
+> **Status (8 Out 2026)**: fases 1 a 6 implementadas e testadas (44 testes); Genie substituído por planos e /aikit-ship (ADR-0018); uma branch por trabalho imposta (ADR-0019); fase 7 (piloto) pendente.
 
 ## Objetivo e escopo
 
@@ -97,7 +97,7 @@ A mecânica do kit fica fora do git, listada num bloco `# >>> ai-kit` em `.git/i
 | `AGENTS.md` | não | symlink | Aponta para `.ai/AGENTS.md` (Codex, Cursor) |
 | `.claude/agents/aikit-*.md` | não | gerado pelo build | Subagents com cabeçalho "não editar" |
 | `.claude/skills/aikit-*` | não | copiado do kit | Os 3 skills |
-| `.claude/settings.local.json` | não | merge pelo init | Hook PostToolUse |
+| `.claude/settings.local.json` | não | merge pelo init e pelo build | Hooks PostToolUse (build) e PreToolUse (bloqueio de commit na branch padrão) |
 | `.ai/plans/*.md` | não | `aikit plan new` + agente | Planos de trabalho; só `active` e `draft` entram no índice |
 
 **Conflito com arquivos do time**: se o projeto já tiver `CLAUDE.md` ou `AGENTS.md` versionados, o `init` não toca neles e avisa. Nesse caso o import do `.ai/AGENTS.md` vai por um caminho privado (ver Riscos).
@@ -248,10 +248,10 @@ Divisão de trabalho: o CLI faz o mecânico e determinístico; os skills fazem o
 | `aikit adr reject 0003` | Marca um ADR `proposed` como rejected |
 | `aikit runbook new "título"` | Cria runbook do template em paths.runbooks com last_verified de hoje |
 | `aikit runbook verify <slug>` | Marca o runbook como verificado hoje |
-| `aikit plan new "título"` | Cria plano `active` em `.ai/plans/` (objetivo, escopo, critérios de aceite, passos, próxima sessão) |
+| `aikit plan new "título"` | Cria plano `active` em `.ai/plans/` (objetivo, escopo, critérios de aceite, passos, próxima sessão), cria a branch `plan/<slug>` e troca para ela |
 | `aikit plan done <slug>` | Conclui o plano (sai do índice) e avisa critérios não marcados |
 | `aikit lint --refs` | Também acusa paths citados em docs que não existem (a parte mecânica do docs-sync) |
-| `aikit hook post-edit` | Entrada do hook PostToolUse (lê o JSON do stdin) |
+| `aikit hook post-edit` / `pre-bash` | Entradas dos hooks PostToolUse e PreToolUse (leem o JSON do stdin) |
 | `aikit backup` | Copia `.ai/` (project.yaml, overrides, notas privadas) para um repo privado seu, uma pasta por projeto; ADRs e runbooks já viajam no git do projeto |
 | `aikit doctor` | Checa exclude, links, build em dia, versão do kit vs projeto, idade do último backup |
 | `aikit uninstall` | Remove só o que está no manifesto, tira só a entrada do hook do settings.local.json e limpa o exclude; `docs/` inteiro fica — é do time |
@@ -273,6 +273,7 @@ Todos com prefixo `aikit-`, pela mesma razão dos subagents: skill sem prefixo p
 **Hook (`.claude/settings.local.json`)**
 
 - `PostToolUse` em `Edit|Write` roda `aikit hook post-edit`, que lê `tool_input.file_path` do stdin e só faz build se o caminho estiver em `.ai/**` ou `docs/**`.
+- `PreToolUse` em `Bash` roda `aikit hook pre-bash`: se há um commit em posição de comando e o repo está na branch padrão, sai com código 2 e o Claude recebe a instrução de criar a branch (ADR-0019).
 - Se o build achar problema (ex.: override inválido), o hook sai com código 2 e a mensagem volta para o Claude corrigir. O comando é gravado com caminho absoluto do `aikit`, porque o shell do hook pode não ter o mesmo PATH.
 
 ## Sem Genie (ADR-0018)

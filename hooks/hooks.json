@@ -1,0 +1,10 @@
+{
+  "PostToolUse": {
+    "matcher": "Edit|Write",
+    "hooks": [{"type": "command", "command": "aikit hook post-edit", "timeout": 60}]
+  },
+  "PreToolUse": {
+    "matcher": "Bash",
+    "hooks": [{"type": "command", "command": "aikit hook pre-bash", "timeout": 30}]
+  }
+}

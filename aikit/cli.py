@@ -97,8 +97,10 @@ def cmd_plan(args) -> int:
 
     project = load_project()
     if args.action == "new":
-        path = records.new_plan(project, args.title, args.summary)
+        path, branch_note = records.new_plan(project, args.title, args.summary)
         print(project.rel(path))
+        if branch_note:
+            print(branch_note)
         print("Preencha Objetivo, Escopo, Critérios de aceite e Passos.")
     else:
         path, open_items = records.finish_plan(project, args.ref)
@@ -141,7 +143,8 @@ def cmd_uninstall(args) -> int:
 def cmd_hook(args) -> int:
     from aikit import hook
 
-    return hook.post_edit(sys.stdin.read())
+    handler = hook.pre_bash if args.event == "pre-bash" else hook.post_edit
+    return handler(sys.stdin.read())
 
 
 def parser() -> argparse.ArgumentParser:
@@ -211,7 +214,7 @@ def parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_uninstall)
 
     s = sub.add_parser("hook", help="entrada dos hooks do Claude Code")
-    s.add_argument("event", choices=["post-edit"])
+    s.add_argument("event", choices=["post-edit", "pre-bash"])
     s.set_defaults(func=cmd_hook)
     return p
 

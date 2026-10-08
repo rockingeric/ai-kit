@@ -43,8 +43,9 @@ def run(project: Project) -> tuple[list[str], list[str]]:
 
     settings = root / ".claude" / "settings.local.json"
     hooks = json.loads(settings.read_text(encoding="utf-8")).get("hooks", {}) if settings.is_file() else {}
-    if not any(HOOK_MARK in h.get("command", "") for e in hooks.get("PostToolUse", []) for h in e.get("hooks", [])):
-        problems.append("hook PostToolUse ausente em .claude/settings.local.json: rode `aikit init`")
+    for event in ("PostToolUse", "PreToolUse"):
+        if not any(HOOK_MARK in h.get("command", "") for e in hooks.get(event, []) for h in e.get("hooks", [])):
+            problems.append(f"hook {event} do kit ausente em .claude/settings.local.json: rode `aikit build`")
     if not shutil.which("aikit"):
         warnings.append("`aikit` fora do PATH: o hook pode não rodar (uv tool install -e ~/ai-kit)")
 

@@ -25,7 +25,8 @@ def env(tmp_path, monkeypatch):
 def repo(tmp_path, monkeypatch) -> Path:
     root = tmp_path / "proj"
     root.mkdir()
-    git(root, "init", "-q")
+    git(root, "init", "-q", "-b", "main")
+    git(root, "config", "init.defaultBranch", "main")  # local config beats the user's global one
     (root / "app.py").write_text("print('oi')\n")
     git(root, "add", ".")
     git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init")

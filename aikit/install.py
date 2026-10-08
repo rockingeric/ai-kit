@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 from pathlib import Path
 
 from aikit import __version__, build, exclude
@@ -22,7 +23,7 @@ from aikit.core import (
 )
 
 IMPORT_LINE = "@.ai/AGENTS.md"
-HOOK_MARK = "hook post-edit"
+HOOK_MARK = "aikit hook "
 BASE_EXCLUDES = ["/.ai/", "/.claude/agents/aikit-*", "/.claude/skills/aikit-*", "/.claude/settings.local.json"]
 
 
@@ -33,26 +34,37 @@ def _template(filename: str, **values: str) -> str:
     return text
 
 
-def hook_entry() -> dict:
-    entry = json.loads((kit_root() / "hooks" / "post-tool-use.json").read_text(encoding="utf-8"))
+def hook_entries() -> dict[str, dict]:
+    """Event name -> our settings entry, from hooks/hooks.json."""
+    entries = json.loads((kit_root() / "hooks" / "hooks.json").read_text(encoding="utf-8"))
     exe = shutil.which("aikit")
+    if not exe and Path(sys.argv[0]).name == "aikit":  # running from a hook whose shell lacks PATH
+        exe = str(Path(sys.argv[0]).absolute())  # not resolve(): keep the same symlink path `which` gives
     if exe:  # absolute path: the hook shell may not share the user's PATH
-        for hook in entry["hooks"]:
-            hook["command"] = hook["command"].replace("aikit ", f"{exe} ", 1)
-    return entry
+        for entry in entries.values():
+            for hook in entry["hooks"]:
+                hook["command"] = hook["command"].replace("aikit ", f"{exe} ", 1)
+    return entries
 
 
 def _is_ours(entry: dict) -> bool:
     return any(HOOK_MARK in h.get("command", "") for h in entry.get("hooks", []))
 
 
+def merged_settings(path: Path) -> str:
+    """settings.local.json content with our hook entries added, everything else kept."""
+    settings = json.loads(path.read_text(encoding="utf-8") or "{}") if path.is_file() else {}
+    hooks = settings.setdefault("hooks", {})
+    for event, entry in hook_entries().items():
+        current = hooks.setdefault(event, [])
+        current[:] = [e for e in current if not _is_ours(e)] + [entry]
+    return json.dumps(settings, indent=2, ensure_ascii=False) + "\n"
+
+
 def merge_settings(path: Path) -> bool:
-    """Add our PostToolUse entry, keeping everything else. Returns True if the file was created."""
+    """Returns True if the file was created."""
     created = not path.exists()
-    settings = {} if created else json.loads(path.read_text(encoding="utf-8") or "{}")
-    post = settings.setdefault("hooks", {}).setdefault("PostToolUse", [])
-    post[:] = [e for e in post if not _is_ours(e)] + [hook_entry()]
-    write_if_changed(path, json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
+    write_if_changed(path, merged_settings(path))
     return created
 
 
@@ -61,11 +73,12 @@ def unmerge_settings(path: Path, created: bool) -> None:
         return
     settings = json.loads(path.read_text(encoding="utf-8") or "{}")
     hooks = settings.get("hooks", {})
-    post = [e for e in hooks.get("PostToolUse", []) if not _is_ours(e)]
-    if post:
-        hooks["PostToolUse"] = post
-    else:
-        hooks.pop("PostToolUse", None)
+    for event in list(hooks):
+        kept = [e for e in hooks[event] if not _is_ours(e)]
+        if kept:
+            hooks[event] = kept
+        else:
+            hooks.pop(event)
     if not hooks:
         settings.pop("hooks", None)
     if created and not settings:

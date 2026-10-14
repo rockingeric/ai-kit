@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import sys
 from pathlib import Path
 
-from aikit.core import AikitError, current_branch, git, load_project
+from aikit.core import AI_DIR, AikitError, current_branch, git, git_toplevel, load_project
 
 GENERATED = {"index.yaml", "manifest.json"}
 # `git commit` in command position (start, or after ; && || | ( $( or a newline), with optional
@@ -16,9 +17,6 @@ GENERATED = {"index.yaml", "manifest.json"}
 _COMMIT_RE = re.compile(
     r"(?:^|[;&|(\n]|\$\()\s*(?:\w+=\S*\s+)*git((?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*)\s+commit(?![\w-])"
 )
-# `cd dir` in command position; the commit runs where the last cd before it left the shell.
-_CD_RE = re.compile(r"(?:^|[;&|(\n])\s*cd\s+(\S+)")
-_GIT_C_RE = re.compile(r"-C\s+(\S+)")
 # Human-only approvals, also when aikit is called by path (`.venv/bin/aikit`).
 _HUMAN_ONLY_RE = re.compile(
     r"(?:^|[;&|(\n]|\$\()\s*(?:\w+=\S*\s+)*(?:\S*/)?aikit\s+(adr\s+accept|wish\s+approve)\b"
@@ -102,39 +100,76 @@ def pre_bash(stdin: str) -> int:
     return 2
 
 
-def _dir(base: Path, arg: str) -> Path:
-    path = Path(os.path.expandvars(os.path.expanduser(arg.strip("'\""))))
-    return path if path.is_absolute() else base / path
+def _commit_dir(cwd: Path, command: str, match: re.Match) -> Path | None:
+    """Where a commit runs, read only from the unambiguous form `cd a && ... && git -C b commit`.
 
-
-def _commit_dir(cwd: Path, command: str, match: re.Match) -> Path:
-    """Where a commit runs: session cwd, then each `cd` before it, then its `git -C`."""
+    None when anything could move the shell elsewhere (; | || ( ` newline, cd -, $VAR, pushd,
+    --git-dir, GIT_DIR, a dir that does not exist): the caller then judges by the session cwd.
+    """
+    text = command[: match.end()]
+    if "\n" in text or "`" in text:
+        return None
+    try:
+        lexer = shlex.shlex(text, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        return None
+    segments: list[list[str]] = [[]]
+    for token in tokens:
+        if token == "&&":
+            segments.append([])
+        elif set(token) <= set(";&|()<>"):
+            return None
+        else:
+            segments[-1].append(token)
     where = cwd
-    for cd in _CD_RE.finditer(command, 0, match.start() + 1):
-        where = _dir(where, cd.group(1))
-    for c in _GIT_C_RE.finditer(match.group(1)):
-        where = _dir(where, c.group(1))
-    # A dir that does not exist yet (or a typo) is judged by its nearest existing parent.
-    while not where.is_dir() and where != where.parent:
-        where = where.parent
-    return where
+    for words in segments[:-1]:
+        if words and words[0] in ("pushd", "popd"):
+            return None
+        if words and words[0] == "cd":
+            if len(words) != 2 or words[1] == "-" or "$" in words[1]:
+                return None
+            where = where / Path(words[1]).expanduser()
+            if not where.is_dir():
+                return None
+    words = segments[-1]
+    while words and "=" in words[0]:
+        if words[0].split("=", 1)[0] in ("GIT_DIR", "GIT_WORK_TREE"):
+            return None
+        words = words[1:]
+    args = iter(words[1:])  # after `git`
+    for word in args:
+        if word == "commit":
+            break
+        if word == "-C":
+            where = where / Path(next(args, "")).expanduser()
+        elif word == "-c":
+            next(args, None)
+        elif word.startswith(("--git-dir", "--work-tree")) or "$" in word:
+            return None
+    return where if where.is_dir() else None
 
 
 def _blocked(cwd: Path, command: str, match: re.Match) -> str | None:
-    """The default branch when this commit would land on it; None otherwise."""
-    where = _commit_dir(cwd, command, match)
+    """The default branch when this commit would land on it; None otherwise.
+
+    The policy is the session project's for any checkout of the same repo (a worktree has no .ai/:
+    it is excluded, not tracked); another repo is judged only by .ai/ at its own top level.
+    """
+    where = _commit_dir(cwd, command, match) or cwd
     try:
-        project = load_project(where, required=False)
-        if not project.config:
-            # A worktree without .ai/ (it is excluded, not tracked) follows the session's project.
-            session = load_project(cwd, required=False)
-            shared = _common_dir(where)
-            if not session.config or shared is None or shared != _common_dir(session.root):
-                return None
+        session = load_project(cwd, required=False)
+        if where == cwd or _common_dir(where) == _common_dir(session.root):
             project = session
+        else:
+            top = git_toplevel(where)
+            if top is None or not (top / AI_DIR / "project.yaml").is_file():
+                return None
+            project = load_project(top)
     except AikitError:
         return None
-    if not project.enforce_branches:
+    if not project.config or not project.enforce_branches:
         return None
     default = project.default_branch()
     return default if current_branch(where) == default else None

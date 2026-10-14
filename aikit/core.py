@@ -191,9 +191,9 @@ def estimate_tokens(text: str) -> int:
 def git(root: Path, *args: str) -> str | None:
     try:
         out = subprocess.run(
-            ["git", *args], cwd=root, capture_output=True, text=True, check=True
+            ["git", *args], cwd=root, capture_output=True, text=True, check=True, timeout=10
         )
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         return None
     return out.stdout.strip()
 

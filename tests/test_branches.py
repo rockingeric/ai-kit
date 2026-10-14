@@ -91,6 +91,7 @@ def test_commit_is_judged_where_it_runs(project, tmp_path):
     feature = _worktree(project, tmp_path, "fix/y")  # no .ai/ there: it is excluded, not tracked
     assert _bash(project, f"cd {feature} && git commit -m x") == 0
     assert _bash(project, f"git -C {feature} commit -m x") == 0
+    assert _bash(project, f"cd {feature.parent} && git -C {feature.name} add . && git -C {feature.name} commit -m x") == 0
     git(project.root, "switch", "-q", "-c", "feat/z")
     git(feature, "switch", "-q", "main")
     assert _bash(project, f"cd {feature} && git commit -m x") == 2
@@ -103,3 +104,31 @@ def test_commit_in_unrelated_repo_is_not_judged(project, tmp_path):
     other.mkdir()
     git(other, "init", "-q", "-b", "main")
     assert _bash(project, f"cd {other} && git commit -m x") == 0
+    assert _bash(project, f'cd "{other}" && git add . && git -c user.name=a commit -m x') == 0
+
+
+def test_ambiguous_dir_falls_back_to_session_cwd(project, tmp_path):
+    elsewhere = tmp_path / "fora"
+    elsewhere.mkdir()
+    for command in [
+        f"(cd {elsewhere}); git commit -m x",  # subshell: the cd does not reach the commit
+        f"cd {elsewhere}; git commit -m x",
+        f"cd {elsewhere};git commit -m x",
+        f'echo "a && cd {elsewhere}" && git commit -m x',
+        f"cd {elsewhere} || git commit -m x",
+        f"cd /nao/existe && git commit -m x",
+        f"cd {elsewhere} && cd - && git commit -m x",
+        f"cd {elsewhere} && cd $OLDPWD && git commit -m x",
+        f"pushd {elsewhere} && popd && git commit -m x",
+        f"cd {elsewhere}\ngit commit -m x",
+        f"cd {elsewhere} && git --git-dir={project.root}/.git --work-tree={project.root} commit -m x",
+        f"cd {elsewhere} && GIT_DIR={project.root}/.git git commit -m x",
+    ]:
+        assert _bash(project, command) == 2, command
+
+
+def test_config_in_a_subfolder_does_not_disable_the_guard(project):
+    sub = project.root / "sub" / ".ai"
+    sub.mkdir(parents=True)
+    (sub / "project.yaml").write_text("name: x\ngit:\n  enforce_branches: false\n")
+    assert _bash(project, "cd sub && git commit -m x") == 2

@@ -79,3 +79,27 @@ def test_build_restores_missing_hooks(project):
     build.run(project)
     assert "PreToolUse" in json.loads(settings.read_text())["hooks"]
     assert doctor.run(project)[0] == []
+
+
+def _worktree(project, tmp_path, branch):
+    path = tmp_path / f"wt-{branch.replace('/', '-')}"
+    git(project.root, "worktree", "add", "-q", "-b", branch, str(path))
+    return path.resolve()
+
+
+def test_commit_is_judged_where_it_runs(project, tmp_path):
+    feature = _worktree(project, tmp_path, "fix/y")  # no .ai/ there: it is excluded, not tracked
+    assert _bash(project, f"cd {feature} && git commit -m x") == 0
+    assert _bash(project, f"git -C {feature} commit -m x") == 0
+    git(project.root, "switch", "-q", "-c", "feat/z")
+    git(feature, "switch", "-q", "main")
+    assert _bash(project, f"cd {feature} && git commit -m x") == 2
+    assert _bash(project, f"git -C {feature} commit -m x") == 2
+    assert _bash(project, "git commit -m x") == 0
+
+
+def test_commit_in_unrelated_repo_is_not_judged(project, tmp_path):
+    other = tmp_path / "outro"
+    other.mkdir()
+    git(other, "init", "-q", "-b", "main")
+    assert _bash(project, f"cd {other} && git commit -m x") == 0

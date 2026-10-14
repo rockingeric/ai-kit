@@ -8,14 +8,17 @@ import re
 import sys
 from pathlib import Path
 
-from aikit.core import AikitError, current_branch, load_project
+from aikit.core import AikitError, current_branch, git, load_project
 
 GENERATED = {"index.yaml", "manifest.json"}
 # `git commit` in command position (start, or after ; && || | ( $( or a newline), with optional
 # VAR=x prefixes and git options like -C dir; not `git commit-tree`, not a mention inside text.
 _COMMIT_RE = re.compile(
-    r"(?:^|[;&|(\n]|\$\()\s*(?:\w+=\S*\s+)*git(?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*\s+commit(?![\w-])"
+    r"(?:^|[;&|(\n]|\$\()\s*(?:\w+=\S*\s+)*git((?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*)\s+commit(?![\w-])"
 )
+# `cd dir` in command position; the commit runs where the last cd before it left the shell.
+_CD_RE = re.compile(r"(?:^|[;&|(\n])\s*cd\s+(\S+)")
+_GIT_C_RE = re.compile(r"-C\s+(\S+)")
 # Human-only approvals, also when aikit is called by path (`.venv/bin/aikit`).
 _HUMAN_ONLY_RE = re.compile(
     r"(?:^|[;&|(\n]|\$\()\s*(?:\w+=\S*\s+)*(?:\S*/)?aikit\s+(adr\s+accept|wish\s+approve)\b"
@@ -34,10 +37,16 @@ def _cwd(payload: dict) -> Path:
 
 
 def watched(project, path: Path) -> bool:
-    if path.name in GENERATED and path.parent == project.ai:
-        return False
+    """`path` absolute but unresolved: a linked folder (e.g. shared wishes) counts by where it is linked."""
     roots = [project.ai, project.path("docs"), project.path("adr"), project.path("runbooks")]
-    return any(path == r or r in path.parents for r in roots)
+    for candidate in {Path(os.path.normpath(path)), path.resolve()}:
+        if candidate.name in GENERATED and candidate.parent in (project.ai, project.ai.resolve()):
+            return False
+        for root in roots:
+            for r in {root, root.resolve()}:
+                if candidate == r or r in candidate.parents:
+                    return True
+    return False
 
 
 def post_edit(stdin: str) -> int:
@@ -54,7 +63,7 @@ def post_edit(stdin: str) -> int:
         if not project.config:
             return 0
         path = Path(file_path)
-        path = (path if path.is_absolute() else cwd / path).resolve()
+        path = path if path.is_absolute() else cwd / path
         if not watched(project, path):
             return 0
         _, problems = build.run(project)
@@ -79,16 +88,9 @@ def pre_bash(stdin: str) -> int:
             file=sys.stderr,
         )
         return 2
-    if not _COMMIT_RE.search(command):
-        return 0
-    try:
-        project = load_project(_cwd(payload), required=False)
-    except AikitError:
-        return 0
-    if not project.config or not project.enforce_branches:
-        return 0
-    branch, default = current_branch(project.root), project.default_branch()
-    if branch != default:
+    cwd = _cwd(payload)
+    default = next(filter(None, (_blocked(cwd, command, m) for m in _COMMIT_RE.finditer(command))), None)
+    if default is None:
         return 0
     print(
         f"aikit: commit na branch padrão ({default}) é bloqueado neste projeto. "
@@ -98,3 +100,46 @@ def pre_bash(stdin: str) -> int:
         file=sys.stderr,
     )
     return 2
+
+
+def _dir(base: Path, arg: str) -> Path:
+    path = Path(os.path.expandvars(os.path.expanduser(arg.strip("'\""))))
+    return path if path.is_absolute() else base / path
+
+
+def _commit_dir(cwd: Path, command: str, match: re.Match) -> Path:
+    """Where a commit runs: session cwd, then each `cd` before it, then its `git -C`."""
+    where = cwd
+    for cd in _CD_RE.finditer(command, 0, match.start() + 1):
+        where = _dir(where, cd.group(1))
+    for c in _GIT_C_RE.finditer(match.group(1)):
+        where = _dir(where, c.group(1))
+    # A dir that does not exist yet (or a typo) is judged by its nearest existing parent.
+    while not where.is_dir() and where != where.parent:
+        where = where.parent
+    return where
+
+
+def _blocked(cwd: Path, command: str, match: re.Match) -> str | None:
+    """The default branch when this commit would land on it; None otherwise."""
+    where = _commit_dir(cwd, command, match)
+    try:
+        project = load_project(where, required=False)
+        if not project.config:
+            # A worktree without .ai/ (it is excluded, not tracked) follows the session's project.
+            session = load_project(cwd, required=False)
+            shared = _common_dir(where)
+            if not session.config or shared is None or shared != _common_dir(session.root):
+                return None
+            project = session
+    except AikitError:
+        return None
+    if not project.enforce_branches:
+        return None
+    default = project.default_branch()
+    return default if current_branch(where) == default else None
+
+
+def _common_dir(path: Path) -> Path | None:
+    out = git(path, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    return Path(out).resolve() if out else None

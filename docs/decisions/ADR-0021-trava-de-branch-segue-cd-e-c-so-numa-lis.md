@@ -1,11 +1,11 @@
 ---
 id: ADR-0021
 title: Trava de branch segue cd e -C só numa lista do que é seguro
-status: proposed
+status: accepted
 date: 2026-10-14
 supersedes: null
 superseded_by: null
-body_sha: null
+body_sha: 53ff6c022b25de487a8a6285e4d4ce5fe3a0bf1cbc139ac6e0271e634abae0c5
 tags: [git, branches, hooks, seguranca]
 summary: Hook segue cd/-C só na forma inequívoca; na dúvida, julga pela sessão
 ---

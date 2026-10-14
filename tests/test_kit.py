@@ -18,7 +18,7 @@ def test_kit_own_adrs_are_valid():
     """Dogfooding: the kit's decisions live in docs/decisions and must pass the same lint."""
     project = Project(kit_root(), {"name": "ai-kit"})
     entries = [e for e in collect(project) if e.kind == "adr"]
-    assert len(entries) == 20
+    assert len(entries) == 21
     report = Report()
     _check_adrs(entries, report)
     assert report.errors == []

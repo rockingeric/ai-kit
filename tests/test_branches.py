@@ -79,3 +79,77 @@ def test_build_restores_missing_hooks(project):
     build.run(project)
     assert "PreToolUse" in json.loads(settings.read_text())["hooks"]
     assert doctor.run(project)[0] == []
+
+
+def _worktree(project, tmp_path, branch):
+    path = tmp_path / f"wt-{branch.replace('/', '-')}"
+    git(project.root, "worktree", "add", "-q", "-b", branch, str(path))
+    return path.resolve()
+
+
+def test_commit_is_judged_where_it_runs(project, tmp_path):
+    feature = _worktree(project, tmp_path, "fix/y")  # no .ai/ there: it is excluded, not tracked
+    assert _bash(project, f"cd {feature} && git commit -m x") == 0
+    assert _bash(project, f"git -C {feature} commit -m x") == 0
+    assert _bash(project, f"cd {feature.parent} && git -C {feature.name} add . && git -C {feature.name} commit -m x") == 0
+    assert _bash(project, f"cd {feature} && git add . && git commit -m x && git commit --amend --no-edit") == 0
+    switch = f"git -C {feature} switch -q --ignore-other-worktrees main && git -C {feature} commit -m x"
+    assert _bash(project, switch) == 2
+    git(project.root, "switch", "-q", "-c", "feat/z")
+    git(feature, "switch", "-q", "main")
+    assert _bash(project, f"cd {feature} && git commit -m x") == 2
+    assert _bash(project, f"git -C {feature} commit -m x") == 2
+    assert _bash(project, "git commit -m x") == 0
+
+
+def test_commit_in_unrelated_repo_is_not_judged(project, tmp_path):
+    other = tmp_path / "outro"
+    other.mkdir()
+    git(other, "init", "-q", "-b", "main")
+    assert _bash(project, f"cd {other} && git commit -m x") == 0
+    assert _bash(project, f'cd "{other}" && git add . && git -c user.name=a commit -m x') == 0
+
+
+def test_ambiguous_dir_falls_back_to_session_cwd(project, tmp_path):
+    elsewhere = tmp_path / "fora"
+    elsewhere.mkdir()
+    for command in [
+        f"(cd {elsewhere}); git commit -m x",  # subshell: the cd does not reach the commit
+        f"cd {elsewhere}; git commit -m x",
+        f"cd {elsewhere};git commit -m x",
+        f'echo "a && cd {elsewhere}" && git commit -m x',
+        f"cd {elsewhere} || git commit -m x",
+        f"cd /nao/existe && git commit -m x",
+        f"cd {elsewhere} && cd - && git commit -m x",
+        f"cd {elsewhere} && cd $OLDPWD && git commit -m x",
+        f"pushd {elsewhere} && popd && git commit -m x",
+        f"cd {elsewhere}\ngit commit -m x",
+        f"cd {elsewhere} && git --git-dir={project.root}/.git --work-tree={project.root} commit -m x",
+        f"cd {elsewhere} && GIT_DIR={project.root}/.git git commit -m x",
+        f"export GIT_DIR={project.root}/.git && cd {elsewhere} && git commit -m x",
+        f"cd {elsewhere} && builtin cd {project.root} && git commit -m x",
+        f"cd {elsewhere} && eval cd {project.root} && git commit -m x",
+        f"cd {elsewhere} && source volta.sh && git commit -m x",
+        f"cd {elsewhere} && X=1 cd {project.root} && git commit -m x",
+        f"cd '~' && git commit -m x",  # quoted ~ is a literal dir for the shell
+        f"git -C {elsewhere}#x commit -m x",  # mid-word # is literal for the shell
+        # an earlier git that moves what the commit sees, after the hook has looked
+        f"cd {elsewhere} && git -C {project.root} worktree add -f {elsewhere} main && git commit -m x",
+        f"cd {elsewhere} && git init -q --separate-git-dir={project.root}/.git && git commit -m x",
+        f"git -C {elsewhere} init -q --separate-git-dir={project.root}/.git && git -C {elsewhere} commit -m x",
+    ]:
+        assert _bash(project, command) == 2, command
+
+
+def test_config_in_a_subfolder_does_not_disable_the_guard(project):
+    sub = project.root / "sub" / ".ai"
+    sub.mkdir(parents=True)
+    (sub / "project.yaml").write_text("name: x\ngit:\n  enforce_branches: false\n")
+    assert _bash(project, "cd sub && git commit -m x") == 2
+
+
+def test_cd_through_a_link_is_logical_like_the_shell(project, tmp_path):
+    outside = tmp_path / "fora" / "alvo"
+    outside.mkdir(parents=True)
+    (project.root / "lnk").symlink_to(outside)
+    assert _bash(project, "cd lnk/.. && git commit -m x") == 2  # the shell is back in the repo

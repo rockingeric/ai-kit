@@ -5,17 +5,21 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import sys
 from pathlib import Path
 
-from aikit.core import AikitError, current_branch, load_project
+from aikit.core import AI_DIR, AikitError, current_branch, git, git_toplevel, load_project
 
 GENERATED = {"index.yaml", "manifest.json"}
 # `git commit` in command position (start, or after ; && || | ( $( or a newline), with optional
 # VAR=x prefixes and git options like -C dir; not `git commit-tree`, not a mention inside text.
 _COMMIT_RE = re.compile(
-    r"(?:^|[;&|(\n]|\$\()\s*(?:\w+=\S*\s+)*git(?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*\s+commit(?![\w-])"
+    r"(?:^|[;&|(\n]|\$\()\s*(?:\w+=\S*\s+)*git((?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*)\s+commit(?![\w-])"
 )
+# Before a commit, only these leave HEAD, the branch and the git dir where the hook saw them.
+_SAFE_GIT = {"add", "rm", "mv", "status", "diff", "log", "show", "commit"}
+_OPERATORS = set(";&|()<>{}!")
 # Human-only approvals, also when aikit is called by path (`.venv/bin/aikit`).
 _HUMAN_ONLY_RE = re.compile(
     r"(?:^|[;&|(\n]|\$\()\s*(?:\w+=\S*\s+)*(?:\S*/)?aikit\s+(adr\s+accept|wish\s+approve)\b"
@@ -34,10 +38,16 @@ def _cwd(payload: dict) -> Path:
 
 
 def watched(project, path: Path) -> bool:
-    if path.name in GENERATED and path.parent == project.ai:
-        return False
+    """`path` absolute but unresolved: a linked folder (e.g. shared wishes) counts by where it is linked."""
     roots = [project.ai, project.path("docs"), project.path("adr"), project.path("runbooks")]
-    return any(path == r or r in path.parents for r in roots)
+    for candidate in {Path(os.path.normpath(path)), path.resolve()}:
+        if candidate.name in GENERATED and candidate.parent in (project.ai, project.ai.resolve()):
+            return False
+        for root in roots:
+            for r in {root, root.resolve()}:
+                if candidate == r or r in candidate.parents:
+                    return True
+    return False
 
 
 def post_edit(stdin: str) -> int:
@@ -54,7 +64,7 @@ def post_edit(stdin: str) -> int:
         if not project.config:
             return 0
         path = Path(file_path)
-        path = (path if path.is_absolute() else cwd / path).resolve()
+        path = path if path.is_absolute() else cwd / path
         if not watched(project, path):
             return 0
         _, problems = build.run(project)
@@ -79,16 +89,9 @@ def pre_bash(stdin: str) -> int:
             file=sys.stderr,
         )
         return 2
-    if not _COMMIT_RE.search(command):
-        return 0
-    try:
-        project = load_project(_cwd(payload), required=False)
-    except AikitError:
-        return 0
-    if not project.config or not project.enforce_branches:
-        return 0
-    branch, default = current_branch(project.root), project.default_branch()
-    if branch != default:
+    cwd = _cwd(payload)
+    default = next(filter(None, (_blocked(cwd, command, m) for m in _COMMIT_RE.finditer(command))), None)
+    if default is None:
         return 0
     print(
         f"aikit: commit na branch padrão ({default}) é bloqueado neste projeto. "
@@ -98,3 +101,97 @@ def pre_bash(stdin: str) -> int:
         file=sys.stderr,
     )
     return 2
+
+
+def _commit_dir(cwd: Path, command: str, match: re.Match) -> Path | None:
+    """Where a commit runs, read only from the form `cd a && git add . && git -C b commit`.
+
+    An allowlist: before the commit only `cd <literal dir>` and `git <subcommand>` for subcommands
+    that cannot move HEAD, the branch or the git dir (`worktree add`, `switch`, `init
+    --separate-git-dir` would change what the commit sees after this check), joined by `&&`. Anything the shell could read differently from shlex (other commands, ; | ( ` newline,
+    # $ ~, GIT_* vars, CDPATH, a dir that does not exist) gives None: the caller then judges by
+    the session cwd, as before.
+    """
+    text = command[: match.end()]
+    if any(c in text for c in "\n`#$"):
+        return None
+    try:
+        lexer = shlex.shlex(text, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        return None
+    if any(t.startswith("~") for t in tokens):
+        return None
+    segments: list[list[str]] = [[]]
+    for token in tokens:
+        if token == "&&":
+            segments.append([])
+        elif set(token) <= _OPERATORS:  # shlex with punctuation_chars yields these as tokens
+            return None
+        else:
+            segments[-1].append(token)
+    where = cwd
+    for words in segments[:-1]:
+        if words[:1] == ["git"] and _git_subcommand(words) in _SAFE_GIT:
+            continue
+        if len(words) != 2 or words[0] != "cd" or words[1].startswith("-"):
+            return None
+        if os.environ.get("CDPATH") and not words[1].startswith(("/", ".")):
+            return None
+        where = Path(os.path.normpath(where / words[1]))  # logical, like the shell's cd
+        if not where.is_dir():
+            return None
+    words = segments[-1]
+    while words and re.fullmatch(r"\w+=.*", words[0]):
+        if words[0].startswith("GIT_"):
+            return None
+        words = words[1:]
+    args = iter(words[1:])  # after `git`
+    for word in args:
+        if word == "commit":
+            break
+        if word == "-C":
+            where = where / next(args, "")  # physical, like git's chdir
+        elif word == "-c":
+            next(args, None)
+        elif word.startswith(("--git-dir", "--work-tree")):
+            return None
+    return where if where.is_dir() else None
+
+
+def _git_subcommand(words: list[str]) -> str | None:
+    """`git [-C dir]... <sub>` -> sub; None with any other global option before it."""
+    i = 1
+    while words[i : i + 1] == ["-C"]:
+        i += 2
+    return words[i] if i < len(words) else None
+
+
+def _blocked(cwd: Path, command: str, match: re.Match) -> str | None:
+    """The default branch when this commit would land on it; None otherwise.
+
+    The policy is the session project's for any checkout of the same repo (a worktree has no .ai/:
+    it is excluded, not tracked); another repo is judged only by .ai/ at its own top level.
+    """
+    where = _commit_dir(cwd, command, match) or cwd
+    try:
+        session = load_project(cwd, required=False)
+        if where == cwd or _common_dir(where) == _common_dir(session.root):
+            project = session
+        else:
+            top = git_toplevel(where)
+            if top is None or not (top / AI_DIR / "project.yaml").is_file():
+                return None
+            project = load_project(top)
+    except AikitError:
+        return None
+    if not project.config or not project.enforce_branches:
+        return None
+    default = project.default_branch()
+    return default if current_branch(where) == default else None
+
+
+def _common_dir(path: Path) -> Path | None:
+    out = git(path, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    return Path(out).resolve() if out else None

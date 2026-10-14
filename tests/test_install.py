@@ -140,3 +140,15 @@ def test_hook_reports_problems_to_claude_with_exit_2(project, capsys):
     (project.ai / "personas" / "qa.yaml").write_text("model: gpt\n")
     assert _hook(project, ".ai/personas/qa.yaml") == 2
     assert ".ai/personas/qa.yaml" in capsys.readouterr().err
+
+
+def test_hook_rebuilds_when_linked_wish_changes(project, tmp_path):
+    shared = tmp_path / "main-checkout-wishes"
+    shared.mkdir()
+    wishes = project.ai / "wishes"
+    if wishes.exists():
+        wishes.rmdir()
+    wishes.symlink_to(shared)
+    (shared / "algo.md").write_text("---\nid: WISH-algo\nstatus: draft\nsummary: Algo\n---\n# Algo\n")
+    assert _hook(project, ".ai/wishes/algo.md") == 0
+    assert ".ai/wishes/algo.md" in (project.ai / "index.yaml").read_text()

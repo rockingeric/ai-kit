@@ -17,6 +17,9 @@ GENERATED = {"index.yaml", "manifest.json"}
 _COMMIT_RE = re.compile(
     r"(?:^|[;&|(\n]|\$\()\s*(?:\w+=\S*\s+)*git((?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*)\s+commit(?![\w-])"
 )
+# Before a commit, only these leave HEAD, the branch and the git dir where the hook saw them.
+_SAFE_GIT = {"add", "rm", "mv", "status", "diff", "log", "show", "commit"}
+_OPERATORS = set(";&|()<>{}!")
 # Human-only approvals, also when aikit is called by path (`.venv/bin/aikit`).
 _HUMAN_ONLY_RE = re.compile(
     r"(?:^|[;&|(\n]|\$\()\s*(?:\w+=\S*\s+)*(?:\S*/)?aikit\s+(adr\s+accept|wish\s+approve)\b"
@@ -103,8 +106,9 @@ def pre_bash(stdin: str) -> int:
 def _commit_dir(cwd: Path, command: str, match: re.Match) -> Path | None:
     """Where a commit runs, read only from the form `cd a && git add . && git -C b commit`.
 
-    An allowlist: before the commit only `cd <literal dir>` and plain `git ...` segments, joined by
-    `&&`. Anything the shell could read differently from shlex (other commands, ; | ( ` newline,
+    An allowlist: before the commit only `cd <literal dir>` and `git <subcommand>` for subcommands
+    that cannot move HEAD, the branch or the git dir (`worktree add`, `switch`, `init
+    --separate-git-dir` would change what the commit sees after this check), joined by `&&`. Anything the shell could read differently from shlex (other commands, ; | ( ` newline,
     # $ ~, GIT_* vars, CDPATH, a dir that does not exist) gives None: the caller then judges by
     the session cwd, as before.
     """
@@ -123,13 +127,13 @@ def _commit_dir(cwd: Path, command: str, match: re.Match) -> Path | None:
     for token in tokens:
         if token == "&&":
             segments.append([])
-        elif set(token) <= set(";&|()<>{}!"):
+        elif set(token) <= _OPERATORS:  # shlex with punctuation_chars yields these as tokens
             return None
         else:
             segments[-1].append(token)
     where = cwd
     for words in segments[:-1]:
-        if words[:1] == ["git"]:
+        if words[:1] == ["git"] and _git_subcommand(words) in _SAFE_GIT:
             continue
         if len(words) != 2 or words[0] != "cd" or words[1].startswith("-"):
             return None
@@ -139,7 +143,7 @@ def _commit_dir(cwd: Path, command: str, match: re.Match) -> Path | None:
         if not where.is_dir():
             return None
     words = segments[-1]
-    while words and "=" in words[0]:
+    while words and re.fullmatch(r"\w+=.*", words[0]):
         if words[0].startswith("GIT_"):
             return None
         words = words[1:]
@@ -154,6 +158,14 @@ def _commit_dir(cwd: Path, command: str, match: re.Match) -> Path | None:
         elif word.startswith(("--git-dir", "--work-tree")):
             return None
     return where if where.is_dir() else None
+
+
+def _git_subcommand(words: list[str]) -> str | None:
+    """`git [-C dir]... <sub>` -> sub; None with any other global option before it."""
+    i = 1
+    while words[i : i + 1] == ["-C"]:
+        i += 2
+    return words[i] if i < len(words) else None
 
 
 def _blocked(cwd: Path, command: str, match: re.Match) -> str | None:

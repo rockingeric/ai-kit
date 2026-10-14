@@ -92,6 +92,9 @@ def test_commit_is_judged_where_it_runs(project, tmp_path):
     assert _bash(project, f"cd {feature} && git commit -m x") == 0
     assert _bash(project, f"git -C {feature} commit -m x") == 0
     assert _bash(project, f"cd {feature.parent} && git -C {feature.name} add . && git -C {feature.name} commit -m x") == 0
+    assert _bash(project, f"cd {feature} && git add . && git commit -m x && git commit --amend --no-edit") == 0
+    switch = f"git -C {feature} switch -q --ignore-other-worktrees main && git -C {feature} commit -m x"
+    assert _bash(project, switch) == 2
     git(project.root, "switch", "-q", "-c", "feat/z")
     git(feature, "switch", "-q", "main")
     assert _bash(project, f"cd {feature} && git commit -m x") == 2
@@ -130,6 +133,10 @@ def test_ambiguous_dir_falls_back_to_session_cwd(project, tmp_path):
         f"cd {elsewhere} && X=1 cd {project.root} && git commit -m x",
         f"cd '~' && git commit -m x",  # quoted ~ is a literal dir for the shell
         f"git -C {elsewhere}#x commit -m x",  # mid-word # is literal for the shell
+        # an earlier git that moves what the commit sees, after the hook has looked
+        f"cd {elsewhere} && git -C {project.root} worktree add -f {elsewhere} main && git commit -m x",
+        f"cd {elsewhere} && git init -q --separate-git-dir={project.root}/.git && git commit -m x",
+        f"git -C {elsewhere} init -q --separate-git-dir={project.root}/.git && git -C {elsewhere} commit -m x",
     ]:
         assert _bash(project, command) == 2, command
 

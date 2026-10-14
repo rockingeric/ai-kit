@@ -193,6 +193,7 @@ def git(root: Path, *args: str) -> str | None:
         out = subprocess.run(
             ["git", *args], cwd=root, capture_output=True, text=True, check=True, timeout=10
         )
+    # A hung git (odd mount, fifo) must not hang hooks; callers treat None as unknown.
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         return None
     return out.stdout.strip()

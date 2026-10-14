@@ -1,4 +1,6 @@
 import json
+import os
+import subprocess
 
 import pytest
 
@@ -120,3 +122,74 @@ def test_done_offers_removal_only_for_a_clean_worktree(project, tmp_path, capsys
     assert f"git worktree remove {tmp_path / 'wt-p-limpo'}" in out  # no tty: says how, removes nothing
     assert "wt-p-sujo tem mudanças não commitadas; mantido" in out
     assert (tmp_path / "wt-p-limpo").is_dir() and (tmp_path / "wt-p-sujo").is_dir()
+
+
+def test_worktree_deleted_by_hand_is_recreated(project, tmp_path):
+    import shutil
+
+    project = _with_worktrees(project, tmp_path)
+    worktree.ensure(project, "f")
+    shutil.rmtree(tmp_path / "wt-p-f")
+    assert "criado" in worktree.ensure(project, "f")
+    assert (tmp_path / "wt-p-f" / ".ai" / "project.yaml").is_symlink()
+
+
+def test_branch_already_in_main_checkout_is_not_called_a_worktree(project, tmp_path):
+    project = _with_worktrees(project, tmp_path)
+    git(project.root, "switch", "-q", "-c", "wish/g")
+    note = worktree.ensure(project, "g")
+    assert "checkout principal" in note and "claude" not in note
+    assert not (tmp_path / "wt-p-g").exists()
+
+
+def test_approve_from_inside_a_worktree_targets_the_main_checkout(project, tmp_path):
+    project = _with_worktrees(project, tmp_path)
+    worktree.ensure(project, "h")
+    inner = load_project(tmp_path / "wt-p-h")
+    assert worktree.main_root(inner) == project.root
+    assert "criado" in worktree.ensure(inner, "i")
+    assert (tmp_path / "wt-p-i" / ".ai" / "project.yaml").resolve() == project.ai / "project.yaml"
+
+
+
+def _plant_symlink(project, tmp_path, branch, rel, target):
+    """Commit `rel` as a symlink to `target` on a new branch, without touching the checkout."""
+    env = {**os.environ, "GIT_INDEX_FILE": str(tmp_path / "plant-index"),
+           "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+
+    def run(*args, stdin=None):
+        return subprocess.run(["git", *args], cwd=project.root, env=env, input=stdin,
+                              capture_output=True, text=True, check=True).stdout.strip()
+
+    run("read-tree", "HEAD")
+    blob = run("hash-object", "-w", "--stdin", stdin=str(target))
+    run("update-index", "--add", "--cacheinfo", f"120000,{blob},{rel}")
+    run("branch", branch, run("commit-tree", run("write-tree"), "-p", "HEAD", "-m", "plant"))
+
+
+def test_symlinked_folder_committed_on_the_branch_is_never_followed(project, tmp_path):
+    project = _with_worktrees(project, tmp_path)
+    outside = tmp_path / "home-claude"
+    outside.mkdir()
+    _plant_symlink(project, tmp_path, "wish/j", ".claude", outside)
+    with pytest.raises(AikitError, match="symlink versionado"):
+        worktree.ensure(project, "j")
+    assert list(outside.iterdir()) == []
+
+
+def test_branch_that_tracks_ai_is_refused(project, tmp_path):
+    project = _with_worktrees(project, tmp_path)
+    victim = tmp_path / "zshrc"
+    victim.write_text("original\n")
+    _plant_symlink(project, tmp_path, "wish/k", ".ai/index.yaml", victim)
+    with pytest.raises(AikitError, match="versiona .ai/"):
+        worktree.ensure(project, "k")
+    assert victim.read_text() == "original\n"
+
+
+def test_newline_in_a_worktree_path_cannot_fake_a_branch(project, tmp_path):
+    project = _with_worktrees(project, tmp_path)
+    fake = tmp_path / "X\nbranch refs/heads/wish/zzz"
+    git(project.root, "worktree", "add", "-q", "-b", "other", str(fake))
+    assert "wish/zzz" not in worktree.worktrees(project.root)
+    assert "criado" in worktree.ensure(project, "zzz")

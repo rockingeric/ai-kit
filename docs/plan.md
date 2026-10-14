@@ -249,8 +249,8 @@ Divisão de trabalho: o CLI faz o mecânico e determinístico; os skills fazem o
 | `aikit runbook new "título"` | Cria runbook do template em paths.runbooks com last_verified de hoje |
 | `aikit runbook verify <slug>` | Marca o runbook como verificado hoje |
 | `aikit wish new "título"` | Cria wish `draft` em `.ai/wishes/` (resumo, escopo, decisões, critérios de aceite, passos, próxima sessão) |
-| `aikit wish approve <slug>` | Só humano: exige critérios preenchidos, marca `approved`, cria a branch `wish/<slug>` e troca para ela |
-| `aikit wish done <slug>` | Conclui o wish `approved` (sai do índice) e avisa critérios não marcados |
+| `aikit wish approve <slug>` | Só humano: exige critérios preenchidos, marca `approved`, cria a branch `wish/<slug>` e troca para ela; com `git.worktrees: true`, abre-a no worktree `wt-<iniciais>-<slug>` (ADR-0022) |
+| `aikit wish done <slug>` | Conclui o wish `approved` (sai do índice) e avisa critérios não marcados; com worktree, oferece removê-lo se estiver limpo |
 | `aikit lint --refs` | Também acusa paths citados em docs que não existem (a parte mecânica do docs-sync) |
 | `aikit hook post-edit` / `pre-bash` | Entradas dos hooks PostToolUse e PreToolUse (leem o JSON do stdin) |
 | `aikit backup` | Copia `.ai/` (project.yaml, overrides, notas privadas) para um repo privado seu, uma pasta por projeto; ADRs e runbooks já viajam no git do projeto |

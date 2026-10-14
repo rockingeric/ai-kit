@@ -244,6 +244,10 @@ class Project:
     def enforce_branches(self) -> bool:
         return bool((self.config.get("git") or {}).get("enforce_branches", True))
 
+    @property
+    def worktrees(self) -> bool:
+        return bool((self.config.get("git") or {}).get("worktrees", False))
+
     def default_branch(self) -> str:
         configured = (self.config.get("git") or {}).get("default_branch")
         if configured:

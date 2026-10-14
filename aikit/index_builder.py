@@ -59,10 +59,12 @@ def collect(project: Project) -> list[Entry]:
     seen: set[Path] = set()
 
     def add(path: Path, kind: str, folder_type: str | None) -> None:
-        path = path.resolve()
-        if path in seen:
+        # Dedupe by the real file, but index the path as seen from the project:
+        # a linked folder (e.g. wishes shared by worktrees) lives outside the root.
+        real = path.resolve()
+        if real in seen:
             return
-        seen.add(path)
+        seen.add(real)
         entries.append(Entry(parse_doc(path), project.rel(path), kind, folder_type))
 
     for path in _md_files(project.path("adr"), "ADR-*.md"):

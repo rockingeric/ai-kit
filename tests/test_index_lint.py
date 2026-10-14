@@ -117,3 +117,15 @@ def test_lint_refs_finds_dead_paths(project):
     )
     warnings = lint.run(project, refs=True).warnings
     assert warnings == ["docs/architecture/overview.md: cita `src/sumiu.py`, que não existe"]
+
+
+def test_index_accepts_wishes_folder_linked_from_another_checkout(project, tmp_path):
+    shared = tmp_path / "main-checkout-wishes"
+    shared.mkdir()
+    (shared / "algo.md").write_text("---\nid: WISH-algo\nstatus: draft\nsummary: Algo\n---\n# Algo\n")
+    wishes = project.ai / "wishes"
+    if wishes.exists():
+        wishes.rmdir()
+    wishes.symlink_to(shared)
+    build.run(project)
+    assert ".ai/wishes/algo.md" in (project.ai / "index.yaml").read_text()

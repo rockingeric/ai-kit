@@ -123,6 +123,13 @@ def test_ambiguous_dir_falls_back_to_session_cwd(project, tmp_path):
         f"cd {elsewhere}\ngit commit -m x",
         f"cd {elsewhere} && git --git-dir={project.root}/.git --work-tree={project.root} commit -m x",
         f"cd {elsewhere} && GIT_DIR={project.root}/.git git commit -m x",
+        f"export GIT_DIR={project.root}/.git && cd {elsewhere} && git commit -m x",
+        f"cd {elsewhere} && builtin cd {project.root} && git commit -m x",
+        f"cd {elsewhere} && eval cd {project.root} && git commit -m x",
+        f"cd {elsewhere} && source volta.sh && git commit -m x",
+        f"cd {elsewhere} && X=1 cd {project.root} && git commit -m x",
+        f"cd '~' && git commit -m x",  # quoted ~ is a literal dir for the shell
+        f"git -C {elsewhere}#x commit -m x",  # mid-word # is literal for the shell
     ]:
         assert _bash(project, command) == 2, command
 
@@ -132,3 +139,10 @@ def test_config_in_a_subfolder_does_not_disable_the_guard(project):
     sub.mkdir(parents=True)
     (sub / "project.yaml").write_text("name: x\ngit:\n  enforce_branches: false\n")
     assert _bash(project, "cd sub && git commit -m x") == 2
+
+
+def test_cd_through_a_link_is_logical_like_the_shell(project, tmp_path):
+    outside = tmp_path / "fora" / "alvo"
+    outside.mkdir(parents=True)
+    (project.root / "lnk").symlink_to(outside)
+    assert _bash(project, "cd lnk/.. && git commit -m x") == 2  # the shell is back in the repo

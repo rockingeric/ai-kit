@@ -101,13 +101,15 @@ def pre_bash(stdin: str) -> int:
 
 
 def _commit_dir(cwd: Path, command: str, match: re.Match) -> Path | None:
-    """Where a commit runs, read only from the unambiguous form `cd a && ... && git -C b commit`.
+    """Where a commit runs, read only from the form `cd a && git add . && git -C b commit`.
 
-    None when anything could move the shell elsewhere (; | || ( ` newline, cd -, $VAR, pushd,
-    --git-dir, GIT_DIR, a dir that does not exist): the caller then judges by the session cwd.
+    An allowlist: before the commit only `cd <literal dir>` and plain `git ...` segments, joined by
+    `&&`. Anything the shell could read differently from shlex (other commands, ; | ( ` newline,
+    # $ ~, GIT_* vars, CDPATH, a dir that does not exist) gives None: the caller then judges by
+    the session cwd, as before.
     """
     text = command[: match.end()]
-    if "\n" in text or "`" in text:
+    if any(c in text for c in "\n`#$"):
         return None
     try:
         lexer = shlex.shlex(text, posix=True, punctuation_chars=True)
@@ -115,27 +117,30 @@ def _commit_dir(cwd: Path, command: str, match: re.Match) -> Path | None:
         tokens = list(lexer)
     except ValueError:
         return None
+    if any(t.startswith("~") for t in tokens):
+        return None
     segments: list[list[str]] = [[]]
     for token in tokens:
         if token == "&&":
             segments.append([])
-        elif set(token) <= set(";&|()<>"):
+        elif set(token) <= set(";&|()<>{}!"):
             return None
         else:
             segments[-1].append(token)
     where = cwd
     for words in segments[:-1]:
-        if words and words[0] in ("pushd", "popd"):
+        if words[:1] == ["git"]:
+            continue
+        if len(words) != 2 or words[0] != "cd" or words[1].startswith("-"):
             return None
-        if words and words[0] == "cd":
-            if len(words) != 2 or words[1] == "-" or "$" in words[1]:
-                return None
-            where = where / Path(words[1]).expanduser()
-            if not where.is_dir():
-                return None
+        if os.environ.get("CDPATH") and not words[1].startswith(("/", ".")):
+            return None
+        where = Path(os.path.normpath(where / words[1]))  # logical, like the shell's cd
+        if not where.is_dir():
+            return None
     words = segments[-1]
     while words and "=" in words[0]:
-        if words[0].split("=", 1)[0] in ("GIT_DIR", "GIT_WORK_TREE"):
+        if words[0].startswith("GIT_"):
             return None
         words = words[1:]
     args = iter(words[1:])  # after `git`
@@ -143,10 +148,10 @@ def _commit_dir(cwd: Path, command: str, match: re.Match) -> Path | None:
         if word == "commit":
             break
         if word == "-C":
-            where = where / Path(next(args, "")).expanduser()
+            where = where / next(args, "")  # physical, like git's chdir
         elif word == "-c":
             next(args, None)
-        elif word.startswith(("--git-dir", "--work-tree")) or "$" in word:
+        elif word.startswith(("--git-dir", "--work-tree")):
             return None
     return where if where.is_dir() else None
 

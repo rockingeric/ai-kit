@@ -110,7 +110,28 @@ def cmd_wish(args) -> int:
         print(f"{path.stem}: done (saiu do índice)")
         for item in open_items:
             print(f"aviso: critério não marcado: {item}", file=sys.stderr)
+        if project.worktrees:
+            _offer_worktree_removal(project, path.stem)
     return _rebuild(project)
+
+
+def _offer_worktree_removal(project, slug: str) -> None:
+    """Only a clean worktree is offered, never forced; the branch stays for the PR."""
+    from aikit import worktree
+
+    path = worktree.find(project, slug)
+    if path is None:
+        return
+    if not worktree.is_clean(path):
+        print(f"worktree {path} tem mudanças não commitadas; mantido")
+        return
+    inside = Path.cwd().resolve().is_relative_to(path)
+    if inside or not sys.stdin.isatty():
+        print(f"worktree {path} limpo; para remover, de fora dele: git worktree remove {path}")
+        return
+    if input(f"Remover o worktree {path}? A branch fica. [s/N] ").strip().lower() in ("s", "sim", "y"):
+        worktree.remove(project, path)
+        print(f"worktree {path} removido")
 
 
 def cmd_backup(args) -> int:
@@ -200,7 +221,7 @@ def parser() -> argparse.ArgumentParser:
     s = wi.add_parser("new", help="novo wish (draft) em .ai/wishes")
     s.add_argument("title")
     s.add_argument("--summary", help="até 80 caracteres")
-    s = wi.add_parser("approve", help="aprova o wish e cria a branch wish/<slug> (só humano)")
+    s = wi.add_parser("approve", help="aprova o wish e abre a branch wish/<slug> (ou o worktree, com git.worktrees) (só humano)")
     s.add_argument("ref")
     s = wi.add_parser("done", help="conclui o wish e o tira do índice")
     s.add_argument("ref")

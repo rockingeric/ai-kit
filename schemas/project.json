@@ -27,7 +27,9 @@
       "additionalProperties": false,
       "properties": {
         "default_branch": {"type": "string", "minLength": 1},
-        "enforce_branches": {"type": "boolean"}
+        "enforce_branches": {"type": "boolean"},
+        "worktrees": {"type": "boolean"},
+        "worktree_dir": {"type": "string", "minLength": 1}
       }
     }
   }

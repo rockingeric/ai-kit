@@ -201,7 +201,7 @@ def new_wish(project: Project, title: str, summary: str | None = None) -> Path:
 
 
 def approve_wish(project: Project, ref: str) -> tuple[Path, str | None]:
-    """Human-only: draft -> approved, then put the repo on `wish/<slug>`. Returns (path, branch note)."""
+    """Human-only: draft -> approved, then open `wish/<slug>` (switch or worktree). Returns (path, branch note)."""
     path = _wish_path(project, ref)
     doc = parse_doc(path)
     status = (doc.meta or {}).get("status")
@@ -210,7 +210,12 @@ def approve_wish(project: Project, ref: str) -> tuple[Path, str | None]:
     open_items, done_items = _criteria(doc.body)
     if not open_items and not done_items:
         raise AikitError(f"{path.stem} não tem critérios de aceite preenchidos; não há o que aprovar")
-    note = project.ensure_branch(f"wish/{path.stem}")
+    if project.worktrees:
+        from aikit import worktree
+
+        note = worktree.ensure(project, path.stem)
+    else:
+        note = project.ensure_branch(f"wish/{path.stem}")
     set_fields(path, {"status": "approved", "approved": today().isoformat()})
     return path, note
 

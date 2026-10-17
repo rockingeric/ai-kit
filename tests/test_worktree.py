@@ -32,8 +32,8 @@ def test_initials_and_default_place():
     assert worktree.initials("--") == "x"
 
 
-def test_default_target_is_outside_the_projects_folder(project):
-    assert worktree.target(project, "jwt") == project.root.parent.parent / "wt-p-jwt"
+def test_default_target_is_next_to_the_repo(project):
+    assert worktree.target(project, "jwt") == project.root.parent.resolve() / "wt-p-jwt"
 
 
 def test_approve_opens_a_provisioned_worktree(project, tmp_path):

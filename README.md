@@ -34,7 +34,7 @@ Antes de cada tarefa, o agente segue uma regra que fica no `AGENTS.md`: se cabe 
 | Situação | O que fazer |
 | --- | --- |
 | Trabalho de várias sessões | O agente usa o skill `aikit-wish` (ou `aikit wish new "..."`) e para no `draft`; a sessão seguinte retoma pelo wish |
-| Aprovar o escopo | Você revisa o wish e roda `aikit wish approve <slug>`: ele vira `approved` e nasce a branch `wish/<slug>` (com `git.worktrees: true`, num worktree `~/wt-<iniciais>-<slug>`) |
+| Aprovar o escopo | Você revisa o wish e roda `aikit wish approve <slug>`: ele vira `approved` e nasce a branch `wish/<slug>` (com `git.worktrees: true`, num worktree `wt-<iniciais>-<slug>` ao lado do repo) |
 | Antes de abrir o PR | `/aikit-ship`: testes, lint e as personas de revisão; devolve o veredito |
 | Wish concluído | `aikit wish done <slug>` (sai do índice) |
 | Começar trabalho com commit | Branch própria: `git switch -c <tipo>/<slug>` (o `aikit wish approve` já cria `wish/<slug>`). O Claude não consegue commitar na branch padrão |
@@ -50,7 +50,7 @@ Antes de cada tarefa, o agente segue uma regra que fica no `AGENTS.md`: se cabe 
 
 Branches: o kit impede o Claude de commitar na branch padrão (hook `PreToolUse`), e o `/aikit-ship` bloqueia o PR nela. A branch padrão vem de `origin/HEAD`, ou de `git.default_branch` no `.ai/project.yaml`; `git.enforce_branches: false` desliga a regra.
 
-Worktrees (opt-in, ADR-0022): com `git.worktrees: true`, `aikit wish approve` abre `wish/<slug>` num worktree fora da pasta de projetos (repo em `~/Projetos/ai-kit` → `~/wt-ak-<slug>`; `git.worktree_dir` troca a pasta-pai), com o kit em symlink do checkout principal. Abra uma sessão nele com `cd <caminho> && claude`. O `aikit wish done` oferece remover o worktree se ele estiver limpo; a branch fica para o PR.
+Worktrees (opt-in, ADR-0023): com `git.worktrees: true`, `aikit wish approve` abre `wish/<slug>` num worktree ao lado do repo, na pasta que o contém (repo em `~/code/hapvida/hap-content-agent` → `~/code/hapvida/wt-hca-<slug>`; `git.worktree_dir` troca a pasta), com o kit em symlink do checkout principal. Abra uma sessão nele com `cd <caminho> && claude`. O `aikit wish done` oferece remover o worktree se ele estiver limpo; a branch fica para o PR.
 
 O índice se mantém sozinho. O hook `PostToolUse` roda `aikit build` quando o agente edita `.ai/` ou `docs/`, e todo comando `adr` e `runbook` também roda o build ao final.
 

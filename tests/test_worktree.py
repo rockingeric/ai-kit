@@ -32,8 +32,17 @@ def test_initials_and_default_place():
     assert worktree.initials("--") == "x"
 
 
-def test_default_target_is_outside_the_projects_folder(project):
-    assert worktree.target(project, "jwt") == project.root.parent.parent / "wt-p-jwt"
+def test_default_target_is_next_to_the_repo(project):
+    assert worktree.target(project, "jwt") == project.root.parent.resolve() / "wt-p-jwt"
+
+
+def test_default_target_stays_in_the_workspace_at_any_depth(project, tmp_path):
+    workspace = tmp_path / "code" / "hapvida"
+    workspace.mkdir(parents=True)
+    root = project.root.rename(workspace / "hap-content-agent")  # ~/code/<workspace>/<repo>
+    assert "criado" in worktree.ensure(load_project(root), "x")
+    assert (workspace / "wt-hca-x" / ".git").is_file()
+    assert not (tmp_path / "code" / "wt-hca-x").exists()
 
 
 def test_approve_opens_a_provisioned_worktree(project, tmp_path):

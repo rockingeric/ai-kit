@@ -1,4 +1,4 @@
-"""Wish worktrees (ADR-0022): `wt-<initials>-<slug>` outside the projects folder, kit symlinked in."""
+"""Wish worktrees (ADR-0023): `wt-<initials>-<slug>` next to the repo, kit symlinked in."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ def target(project: Project, slug: str) -> Path:
         parent = Path(configured).expanduser()
         parent = parent if parent.is_absolute() else main / parent
     else:
-        parent = main.parent.parent  # outside the folder that holds the projects
+        parent = main.parent  # next to the repo, in its workspace at any depth
     return parent.resolve() / f"wt-{initials(main.name)}-{slug}"
 
 

@@ -1,10 +1,10 @@
 ---
 id: ADR-0022
 title: Wish aprovado abre worktree fora da pasta de projetos
-status: accepted
+status: superseded
 date: 2026-10-14
 supersedes: null
-superseded_by: null
+superseded_by: ADR-0023
 body_sha: 20c8ea7c2eaf89d93e6e7e0dfbee21701a6e177d5681089148dcb067c79b853a
 tags: [git, branches, wishes, worktrees]
 summary: wish approve cria worktree wt-<iniciais>-<slug> com o kit em symlink

@@ -49,18 +49,37 @@ def test_commit_on_default_branch_is_blocked(project, capsys):
     assert _bash(project, "git --no-pager commit") == 2
 
 
-
-def test_commit_through_rtk_or_git_by_path_is_blocked(project):
+def test_commit_through_rtk_or_git_by_path_is_blocked(project, tmp_path):
     # rtk's Claude Code hook rewrites `git commit` to `rtk git commit`
-    assert _bash(project, "rtk git commit -m x") == 2
-    assert _bash(project, "rtk proxy git commit -m x") == 2
-    assert _bash(project, "/usr/bin/git commit -m x") == 2
-    assert _bash(project, "rtk git add . && rtk git -C sub commit -m x") == 2
-    assert _bash(project, "rtk aikit adr accept 0003") == 2
+    for command in (
+        "rtk git commit -m x",
+        "rtk proxy git commit -m x",
+        "rtk -v git commit -m x",
+        "/usr/local/bin/rtk git commit -m x",
+        "x=1 rtk git commit -m x",
+        "/usr/bin/git commit -m x",
+        "rtk git add . && rtk git -C sub commit -m x",
+        "/usr/bin/git add . && /usr/bin/git -C sub commit -m x",
+        f"rtk proxy cd {tmp_path} && git commit -m x",  # cd in a child process: commit stays here
+        "rtk aikit adr accept 0003",
+        "rtk proxy aikit adr accept 0003",
+        "rtk -v .venv/bin/aikit wish approve jwt",
+    ):
+        assert _bash(project, command) == 2, command
     assert _bash(project, "rtk git status") == 0
+    assert _bash(project, "rtk git commit-tree abc") == 0
     git(project.root, "switch", "-q", "-c", "fix/bug")
     assert _bash(project, "rtk git commit -m x") == 0
     assert _bash(project, "cd . && rtk git add . && rtk git commit -m x") == 0
+
+
+def test_hook_regexes_stay_fast_on_long_commands(project):
+    import time
+
+    start = time.monotonic()
+    assert _bash(project, ";" * 50000) == 0
+    assert time.monotonic() - start < 1
+
 
 def test_other_commands_and_branches_pass(project):
     assert _bash(project, "git status && git log --oneline") == 0

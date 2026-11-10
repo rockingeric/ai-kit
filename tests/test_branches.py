@@ -68,6 +68,8 @@ def test_commit_through_rtk_or_git_by_path_is_blocked(project, tmp_path):
         "rtk -v .venv/bin/aikit wish approve jwt",
         "$(pwd)/.venv/bin/aikit adr accept 0003",
         "$(pwd)/.venv/bin/aikit wish approve jwt",
+        "$(cd .. && pwd)/.venv/bin/aikit adr accept 0003",
+        "$(realpath $(pwd))/.venv/bin/aikit wish approve jwt",
     ):
         assert _bash(project, command) == 2, command
     assert _bash(project, "rtk git status") == 0
@@ -78,11 +80,23 @@ def test_commit_through_rtk_or_git_by_path_is_blocked(project, tmp_path):
     assert _bash(project, "cd . && rtk git add . && rtk git commit -m x") == 0
 
 
+def test_long_command_is_not_parsed(project, capsys):
+    from aikit.hook import MAX_COMMAND
+
+    assert _bash(project, "git commit -m x " + "a" * MAX_COMMAND) == 2
+    assert "caracteres" in capsys.readouterr().err
+    assert _bash(project, "echo " + "a" * MAX_COMMAND) == 0
+    assert _bash(project, "git commit -m x " + "a" * (MAX_COMMAND - 100)) == 2  # parsed as usual
+
+
 def test_hook_regexes_stay_fast_on_long_commands(project):
     import time
 
     # Each took seconds with a backtracking regex; linear, they take milliseconds.
-    for command in (";a/" * 20000, "$(" * 20000, "$(a)" * 20000, "rtk -v " * 20000, ";rtk -a=" * 20000):
+    from aikit.hook import MAX_COMMAND
+
+    units = (";a/", "$(", "$(a)", "rtk -v ", ";rtk -a=", " x=$(", ";/git -C x", "$(a)/", ")/")
+    for command in ((u * MAX_COMMAND)[:MAX_COMMAND] for u in units):
         start = time.monotonic()
         assert _bash(project, command) == 0
         assert time.monotonic() - start < 1, command[:20]
@@ -132,6 +146,11 @@ def test_commit_is_judged_where_it_runs(project, tmp_path):
     assert _bash(project, f"git -C {feature} commit -m x") == 0
     assert _bash(project, f"cd {feature.parent} && git -C {feature.name} add . && git -C {feature.name} commit -m x") == 0
     assert _bash(project, f"cd {feature} && git add . && git commit -m x && git commit --amend --no-edit") == 0
+    assert _bash(project, f"rtk git -C {feature} commit -m x") == 0
+    assert _bash(project, f"cd {feature} && rtk proxy git add . && rtk -v git commit -m x") == 0
+    assert _bash(project, f"cd {feature} && /usr/bin/git status && git commit -m x") == 0
+    # a relative `git` may be the agent's own script (it could switch branches): judged by the session cwd
+    assert _bash(project, f"cd {feature} && ./tools/git status && git commit -m x") == 2
     switch = f"git -C {feature} switch -q --ignore-other-worktrees main && git -C {feature} commit -m x"
     assert _bash(project, switch) == 2
     git(project.root, "switch", "-q", "-c", "feat/z")

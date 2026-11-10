@@ -12,28 +12,27 @@ from pathlib import Path
 from aikit.core import AI_DIR, AikitError, current_branch, git, git_toplevel, load_project
 
 GENERATED = {"index.yaml", "manifest.json"}
-# A path before a command name, also built with `$(pwd)`. Parens only as `$(...)` and no other
-# operator inside, so the search stays linear on long runs of `;` or `$(`.
-_PATH_RE = r"(?:(?:\$\([^()\s]*\)|[^\s;&|()])*/)?"
-# rtk's Claude Code hook rewrites `git commit` to `rtk git commit`: `rtk [-opts] [proxy [-opts]]`
-# runs what follows. Options may carry `=value`.
+# Above this the regexes could take seconds (VAR=x prefixes backtrack); a timed-out hook does not block.
+MAX_COMMAND = 8192
+# rtk's Claude Code hook rewrites `git commit` to `rtk git commit`: `[path/]rtk [-opts] [proxy [-opts]]`
+# runs what follows. Options may carry `=value`. No operator in the path: linear on long runs of `;`.
 _RTK_OPTS_RE = r"(?:\s+-[\w-]+(?:=[^\s;&|()]*)?)*"
-_WRAPPER_RE = r"(?:" + _PATH_RE + r"rtk" + _RTK_OPTS_RE + r"\s+(?:proxy" + _RTK_OPTS_RE + r"\s+)?)?"
-# `git commit` in command position (start, or after ; && || | ( $( or a newline), with optional
-# VAR=x prefixes, an rtk wrapper, git by path, and git options like -C dir; not `git commit-tree`,
-# not a mention inside text.
+_WRAPPER_RE = r"(?:(?:[^\s;&|()]*/)?rtk" + _RTK_OPTS_RE + r"\s+(?:proxy" + _RTK_OPTS_RE + r"\s+)?)?"
+# A command in command position (start, or after ; && || | ( $( or a newline, with optional VAR=x
+# prefixes and an rtk wrapper), or called by any path: `/git`, `.venv/bin/aikit`, `$(cd .. && pwd)/git`.
+# The path itself is not parsed, so a `$(...)` with spaces or nesting cannot hide it.
+# VAR=x values: no operator inside except a whole `$(...)`, so prefixes do not backtrack.
+_ASSIGN_RE = r"(?:\w+=(?:\$\([^()\s]*\)|[^\s;&|()])*\s+)*"
+_COMMAND_RE = r"(?:(?:^|[;&|(\n]|\$\()\s*" + _ASSIGN_RE + _WRAPPER_RE + r"|/)"
+# `git commit` with git options like -C dir; not `git commit-tree`, not a mention inside text.
 _COMMIT_RE = re.compile(
-    r"(?:^|[;&|(\n]|\$\()\s*(?:\w+=\S*\s+)*" + _WRAPPER_RE
-    + _PATH_RE + r"git((?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*)\s+commit(?![\w-])"
+    _COMMAND_RE + r"git((?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*)\s+commit(?![\w-])"
 )
 # Before a commit, only these leave HEAD, the branch and the git dir where the hook saw them.
 _SAFE_GIT = {"add", "rm", "mv", "status", "diff", "log", "show", "commit"}
 _OPERATORS = set(";&|()<>{}!")
 # Human-only approvals, also when aikit is called by path (`.venv/bin/aikit`).
-_HUMAN_ONLY_RE = re.compile(
-    r"(?:^|[;&|(\n]|\$\()\s*(?:\w+=\S*\s+)*" + _WRAPPER_RE
-    + _PATH_RE + r"aikit\s+(adr\s+accept|wish\s+approve)\b"
-)
+_HUMAN_ONLY_RE = re.compile(_COMMAND_RE + r"aikit\s+(adr\s+accept|wish\s+approve)\b")
 
 
 def _payload(stdin: str) -> dict:
@@ -90,6 +89,16 @@ def pre_bash(stdin: str) -> int:
     """Exit 2 blocks the Bash call and shows stderr to Claude."""
     payload = _payload(stdin)
     command = (payload.get("tool_input") or {}).get("command") or ""
+    if len(command) > MAX_COMMAND and ("commit" in command or "aikit" in command):
+        print(
+            f"aikit: comando com mais de {MAX_COMMAND} caracteres que menciona commit ou aikit; "
+            "o hook não o confere. Divida o comando, ou escreva o conteúdo longo em arquivo "
+            "(Write) e passe o arquivo (ex.: `git commit -F arquivo`).",
+            file=sys.stderr,
+        )
+        return 2
+    if len(command) > MAX_COMMAND:
+        return 0
     human_only = _HUMAN_ONLY_RE.search(command)
     if human_only:
         action = " ".join(human_only.group(1).split())
@@ -144,7 +153,7 @@ def _commit_dir(cwd: Path, command: str, match: re.Match) -> Path | None:
     where = cwd
     for words in segments[:-1]:
         words = _unwrap(words)
-        if words[:1] and Path(words[0]).name == "git" and _git_subcommand(words) in _SAFE_GIT:
+        if words[:1] and _is_command(words[0], "git") and _git_subcommand(words) in _SAFE_GIT:
             continue
         if len(words) != 2 or words[0] != "cd" or words[1].startswith("-"):
             return None
@@ -175,12 +184,17 @@ def _commit_dir(cwd: Path, command: str, match: re.Match) -> Path | None:
 def _unwrap(words: list[str]) -> list[str]:
     """`rtk [-opts] [proxy [-opts]] git ...` -> `git ...`. Only before git: `rtk proxy cd x` runs cd in a child
     process, so it must not move where the commit is judged."""
-    if not words or Path(words[0]).name != "rtk":
+    if not words or not _is_command(words[0], "rtk"):
         return words
     i = _skip_options(words, 1)
     if words[i : i + 1] == ["proxy"]:
         i = _skip_options(words, i + 1)
-    return words[i:] if i < len(words) and Path(words[i]).name == "git" else words
+    return words[i:] if i < len(words) and _is_command(words[i], "git") else words
+
+
+def _is_command(word: str, name: str) -> bool:
+    """`git` or `/abs/path/git`; a relative `./tools/git` may be the agent's own script."""
+    return word == name or (word.startswith("/") and Path(word).name == name)
 
 
 def _skip_options(words: list[str], i: int) -> int:

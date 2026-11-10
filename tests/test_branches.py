@@ -49,6 +49,19 @@ def test_commit_on_default_branch_is_blocked(project, capsys):
     assert _bash(project, "git --no-pager commit") == 2
 
 
+
+def test_commit_through_rtk_or_git_by_path_is_blocked(project):
+    # rtk's Claude Code hook rewrites `git commit` to `rtk git commit`
+    assert _bash(project, "rtk git commit -m x") == 2
+    assert _bash(project, "rtk proxy git commit -m x") == 2
+    assert _bash(project, "/usr/bin/git commit -m x") == 2
+    assert _bash(project, "rtk git add . && rtk git -C sub commit -m x") == 2
+    assert _bash(project, "rtk aikit adr accept 0003") == 2
+    assert _bash(project, "rtk git status") == 0
+    git(project.root, "switch", "-q", "-c", "fix/bug")
+    assert _bash(project, "rtk git commit -m x") == 0
+    assert _bash(project, "cd . && rtk git add . && rtk git commit -m x") == 0
+
 def test_other_commands_and_branches_pass(project):
     assert _bash(project, "git status && git log --oneline") == 0
     assert _bash(project, "git commit-tree abc") == 0

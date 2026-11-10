@@ -55,6 +55,8 @@ def test_commit_through_rtk_or_git_by_path_is_blocked(project, tmp_path):
         "rtk git commit -m x",
         "rtk proxy git commit -m x",
         "rtk -v git commit -m x",
+        "rtk --foo=1 git commit -m x",
+        "rtk -v proxy -v git commit -m x",
         "/usr/local/bin/rtk git commit -m x",
         "x=1 rtk git commit -m x",
         "/usr/bin/git commit -m x",
@@ -64,10 +66,13 @@ def test_commit_through_rtk_or_git_by_path_is_blocked(project, tmp_path):
         "rtk aikit adr accept 0003",
         "rtk proxy aikit adr accept 0003",
         "rtk -v .venv/bin/aikit wish approve jwt",
+        "$(pwd)/.venv/bin/aikit adr accept 0003",
+        "$(pwd)/.venv/bin/aikit wish approve jwt",
     ):
         assert _bash(project, command) == 2, command
     assert _bash(project, "rtk git status") == 0
     assert _bash(project, "rtk git commit-tree abc") == 0
+    assert _bash(project, "echo rtk git commit") == 0  # a mention is not a commit
     git(project.root, "switch", "-q", "-c", "fix/bug")
     assert _bash(project, "rtk git commit -m x") == 0
     assert _bash(project, "cd . && rtk git add . && rtk git commit -m x") == 0
@@ -76,9 +81,11 @@ def test_commit_through_rtk_or_git_by_path_is_blocked(project, tmp_path):
 def test_hook_regexes_stay_fast_on_long_commands(project):
     import time
 
-    start = time.monotonic()
-    assert _bash(project, ";" * 50000) == 0
-    assert time.monotonic() - start < 1
+    # Each took seconds with a backtracking regex; linear, they take milliseconds.
+    for command in (";a/" * 20000, "$(" * 20000, "$(a)" * 20000, "rtk -v " * 20000, ";rtk -a=" * 20000):
+        start = time.monotonic()
+        assert _bash(project, command) == 0
+        assert time.monotonic() - start < 1, command[:20]
 
 
 def test_other_commands_and_branches_pass(project):

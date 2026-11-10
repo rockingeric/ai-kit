@@ -12,10 +12,13 @@ from pathlib import Path
 from aikit.core import AI_DIR, AikitError, current_branch, git, git_toplevel, load_project
 
 GENERATED = {"index.yaml", "manifest.json"}
-# A path before a command name; no operator inside, so the search stays linear on `;;;...`.
-_PATH_RE = r"(?:[^\s;&|()]*/)?"
-# rtk's Claude Code hook rewrites `git commit` to `rtk git commit`: `rtk [-opts] [proxy]` runs what follows.
-_WRAPPER_RE = r"(?:" + _PATH_RE + r"rtk(?:\s+-[\w-]+)*\s+(?:proxy\s+)?)?"
+# A path before a command name, also built with `$(pwd)`. Parens only as `$(...)` and no other
+# operator inside, so the search stays linear on long runs of `;` or `$(`.
+_PATH_RE = r"(?:(?:\$\([^()\s]*\)|[^\s;&|()])*/)?"
+# rtk's Claude Code hook rewrites `git commit` to `rtk git commit`: `rtk [-opts] [proxy [-opts]]`
+# runs what follows. Options may carry `=value`.
+_RTK_OPTS_RE = r"(?:\s+-[\w-]+(?:=[^\s;&|()]*)?)*"
+_WRAPPER_RE = r"(?:" + _PATH_RE + r"rtk" + _RTK_OPTS_RE + r"\s+(?:proxy" + _RTK_OPTS_RE + r"\s+)?)?"
 # `git commit` in command position (start, or after ; && || | ( $( or a newline), with optional
 # VAR=x prefixes, an rtk wrapper, git by path, and git options like -C dir; not `git commit-tree`,
 # not a mention inside text.
@@ -170,16 +173,20 @@ def _commit_dir(cwd: Path, command: str, match: re.Match) -> Path | None:
 
 
 def _unwrap(words: list[str]) -> list[str]:
-    """`rtk [-opts] [proxy] git ...` -> `git ...`. Only before git: `rtk proxy cd x` runs cd in a child
+    """`rtk [-opts] [proxy [-opts]] git ...` -> `git ...`. Only before git: `rtk proxy cd x` runs cd in a child
     process, so it must not move where the commit is judged."""
     if not words or Path(words[0]).name != "rtk":
         return words
-    i = 1
+    i = _skip_options(words, 1)
+    if words[i : i + 1] == ["proxy"]:
+        i = _skip_options(words, i + 1)
+    return words[i:] if i < len(words) and Path(words[i]).name == "git" else words
+
+
+def _skip_options(words: list[str], i: int) -> int:
     while i < len(words) and words[i].startswith("-"):
         i += 1
-    if words[i : i + 1] == ["proxy"]:
-        i += 1
-    return words[i:] if i < len(words) and Path(words[i]).name == "git" else words
+    return i
 
 
 def _git_subcommand(words: list[str]) -> str | None:

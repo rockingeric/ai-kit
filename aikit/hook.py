@@ -12,17 +12,23 @@ from pathlib import Path
 from aikit.core import AI_DIR, AikitError, current_branch, git, git_toplevel, load_project
 
 GENERATED = {"index.yaml", "manifest.json"}
+# Wrappers that run the command after them: rtk's hook rewrites `git commit` to `rtk git commit`.
+_WRAPPERS = ("rtk", "proxy")
+_WRAPPER_RE = r"(?:(?:\S*/)?rtk\s+(?:proxy\s+)?)?"
 # `git commit` in command position (start, or after ; && || | ( $( or a newline), with optional
-# VAR=x prefixes and git options like -C dir; not `git commit-tree`, not a mention inside text.
+# VAR=x prefixes, an rtk wrapper, git by path, and git options like -C dir; not `git commit-tree`,
+# not a mention inside text.
 _COMMIT_RE = re.compile(
-    r"(?:^|[;&|(\n]|\$\()\s*(?:\w+=\S*\s+)*git((?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*)\s+commit(?![\w-])"
+    r"(?:^|[;&|(\n]|\$\()\s*(?:\w+=\S*\s+)*" + _WRAPPER_RE
+    + r"(?:\S*/)?git((?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*)\s+commit(?![\w-])"
 )
 # Before a commit, only these leave HEAD, the branch and the git dir where the hook saw them.
 _SAFE_GIT = {"add", "rm", "mv", "status", "diff", "log", "show", "commit"}
 _OPERATORS = set(";&|()<>{}!")
 # Human-only approvals, also when aikit is called by path (`.venv/bin/aikit`).
 _HUMAN_ONLY_RE = re.compile(
-    r"(?:^|[;&|(\n]|\$\()\s*(?:\w+=\S*\s+)*(?:\S*/)?aikit\s+(adr\s+accept|wish\s+approve)\b"
+    r"(?:^|[;&|(\n]|\$\()\s*(?:\w+=\S*\s+)*" + _WRAPPER_RE
+    + r"(?:\S*/)?aikit\s+(adr\s+accept|wish\s+approve)\b"
 )
 
 
@@ -133,6 +139,8 @@ def _commit_dir(cwd: Path, command: str, match: re.Match) -> Path | None:
             segments[-1].append(token)
     where = cwd
     for words in segments[:-1]:
+        while words and Path(words[0]).name in _WRAPPERS:
+            words = words[1:]
         if words[:1] == ["git"] and _git_subcommand(words) in _SAFE_GIT:
             continue
         if len(words) != 2 or words[0] != "cd" or words[1].startswith("-"):
@@ -146,6 +154,8 @@ def _commit_dir(cwd: Path, command: str, match: re.Match) -> Path | None:
     while words and re.fullmatch(r"\w+=.*", words[0]):
         if words[0].startswith("GIT_"):
             return None
+        words = words[1:]
+    while words and Path(words[0]).name in _WRAPPERS:
         words = words[1:]
     args = iter(words[1:])  # after `git`
     for word in args:
